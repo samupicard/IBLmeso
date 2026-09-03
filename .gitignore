@@ -1,0 +1,30 @@
+# MATLAB temporary/autosave files
+*.asv
+*.autosave
+
+# MATLAB generated files
+slprj/
+sccprj/
+codegen/
+*.mex*
+*.mexa64
+*.mexw64
+*.mexmaci64
+
+# MATLAB project user-specific files
+*.prj.user
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large / local data
+data/
+results/
+
+# Python, if any
+__pycache__/
+*.pyc
+
+# VS Code local settings
+.vscode/
