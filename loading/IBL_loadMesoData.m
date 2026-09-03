@@ -126,12 +126,11 @@ for iFOV = 1:nFOV
     reg_data_path = fns(iFOV).folder;
     planeNm = sprintf('plane%s',reg_data_path(end));
     %reg_data_path_masknmf = fullfile(datpath,'suite2p',planeNm,'masknmf_output');
-    reg_data_path_masknmf = reg_data_path;
-    try
+    %try
         %% load traces
         if strcmp(trace,'spks')
             % mpci.ROIActivityDeconvolved.npy is (time x roi)
-            tr = readNPY(fullfile(reg_data_path_masknmf,'mpci.ROIActivityDeconvolved.npy'))';
+            tr = readNPY(fullfile(reg_data_path,'mpci.ROIActivityDeconvolved.npy'))';
         elseif strcmp(trace,'dFF')
             F    = readNPY(fullfile(reg_data_path,'mpci.ROIActivityF.npy'))';
             Fneu = readNPY(fullfile(reg_data_path,'mpci.ROINeuropilActivityF.npy'))';
@@ -183,7 +182,7 @@ for iFOV = 1:nFOV
         end
 
         %% optional: positions / annotation
-        stackPos = readNPY(fullfile(reg_data_path_masknmf,'mpciROIs.stackPos.npy')); % (nROI x 2) [x y]?
+        stackPos = readNPY(fullfile(reg_data_path,'mpciROIs.stackPos.npy')); % (nROI x 2) [x y]?
         if ~fast
             % try preferred precomputed files first (avoid expensive computation)
             roiCCFName   = dir(fullfile(reg_data_path,'mpciROIs.brainLocationIds_ccf_2017_estimate*'));
@@ -336,11 +335,11 @@ for iFOV = 1:nFOV
         tshift_c{iFOV} = timeshift;
 
 
-    catch
-        error_flag(iFOV) = true;
-        warning(sprintf('FOV_%02d has an irregularity, skipping!',iFOV-1))
-        continue
-    end
+    %catch
+    %    error_flag(iFOV) = true;
+    %    warning(sprintf('FOV_%02d has an irregularity, skipping!',iFOV-1))
+    %    continue
+    %end
 end
 
 % if all FOVs failed, bail
