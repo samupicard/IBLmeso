@@ -1,15 +1,17 @@
 
-subjLearners = {'SP035','SP037','SP044','SP046','SP054','SP058','SP060','SP061','SP063','SP066','SP067','SP072','SP075','SP076'};
+%subjLearners = {'SP035','SP037','SP044','SP046','SP054','SP058','SP060','SP061','SP063','SP066','SP067','SP072','SP075','SP076'};
 %subjLearners = {'SP035','SP037','SP044','SP046','SP054','SP058','SP060','SP061'};
 
 saveflag = true;
 loadParquetIfExists = true;   % use saved allROIs_*.parquet when available
 forceReaggregate = true;     % set true to ignore saved parquet files
 
+load('canonicalSessions.mat');
+
 %sPaths = IBL_listSessionPaths('root','Y:\Subjects','protocol',{'trainingChoiceWorld'},'mpci',true);
 % sPaths = IBL_listSessionPaths('root','Y:\Subjects',...
-%     'protocol',{'biasedChoiceWorld'},'mpci',true,...
-%     'fullContrastSet',true,'trials',400);
+%     'protocol',{'trainingChoiceWorld','trainingPhaseChoiceWorld','biasedChoiceWorld'},'mpci',true,...
+%     'fullContrastSet',true,'trials',400,'perfOnEasy',0.8);
 
 %sPaths = filter_session_paths_by_subject(sPaths,subjLearners);
 %sPaths = filter_session_paths_by_subject(sPaths,{'SP075'}); sPaths = sPaths(1:8);
@@ -18,7 +20,8 @@ forceReaggregate = true;     % set true to ignore saved parquet files
 %svPath = 'Y:\Subjects\results\taskVariableTuning_SingleCells\ALL';
 %svPath = 'C:\Users\Samuel\Desktop\DataClub_2026-04\results\bCW';
 %svPath = 'C:\Users\Samuel\Documents\2PI\mesoscope_active\analysis\PETH\densityMaps\bCW_SP072_2sessions';
-svPath = 'C:\Users\Samuel\Documents\2PI\mesoscope_active\analysis\PETH\densityMaps\passiveMovie';
+%svPath = 'C:\Users\Samuel\Documents\2PI\mesoscope_active\analysis\PETH\densityMaps\passiveMovie';
+svPath = 'C:\Users\Samuel\Documents\MATLAB\Code\IBLmeso\results';
 
 % statNames = {...
 %     'ccu_stimOn_0to400_stimSide100',...
@@ -53,14 +56,14 @@ baseLabels = { ...
 %cmaps_frac_perBase = {[0.05,0.2],[0.05,0.2],[0.05,0.4]};
 %cmaps_meds_perBase = {[-2,2],[-2,2],[-3,3]};
 
-cmaps_frac_perBase = {[0.02,0.25],[0.02,0.25],[0.02,0.25],[0.02,0.5]};
+cmaps_frac_perBase = {[0.05,0.2],[0.05,0.2],[0.05,0.2],[0.05,0.4]};
 cmaps_meds_perBase = {[-2,2],[-2,2],[-2,2],[-3,3]};
 
 %cmaps_frac_perBase = {[0.05,0.2],[0.05,0.2],[0.05,0.4],[0.05,0.4]};
 %cmaps_meds_perBase = {[-2,2],[-2,2],[-3,3],[-3,3]};
 
 %% make one figure per stat/base
-if false
+if true
     for b = 1:numel(bases)
 
         bparts = bases{b};
@@ -102,7 +105,7 @@ if false
                     sPaths, ...
                     'columnName', statName, ...
                     'useType', true,...
-                    'onlyResponsive',true);
+                    'onlyResponsive',false);
 
                 if saveflag
                     if ~exist(svPath, 'dir')
@@ -124,7 +127,7 @@ if false
             % compute density maps
             D = IBL_computeROIdensityMaps(T);
 
-            D.v_clim_sess = [0 1];
+            D.v_clim_sess = [0 10];
 
             % column label
             %colLabel = sprintf('%d to %d ms', t(1), t(2));
@@ -263,7 +266,8 @@ if false
     % end
 end
 
-%passive movie reliability map
+if false
+%% passive movie reliability map
 
 % Aggregate once (any valid columnName will do; we only use passiveMovieCorr)
 Tmovie = aggregateROIsFromALF_fast( ...
@@ -491,7 +495,7 @@ for iStat = 1:numel(passiveStats)
 
 end
 
-
+end
 
 %% make session-by-session heatmaps per stat/base
 if false
@@ -731,7 +735,7 @@ if false
     end
 end
 %% make session-by-session ROI scatter figures per stat/base
-if true %DRAFT
+if false %DRAFT
     for b = 1:numel(bases)
 
         bparts = bases{b};

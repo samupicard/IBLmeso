@@ -1,10 +1,19 @@
 
-saveflag = false;
+saveflag = true;
 overwrite = true;
 
 %% loading
+
+
+% load sPaths from canonical sessions
+%load("canonicalSessions.mat");
+
 %subjLearners = {'SP035','SP037','SP044','SP046','SP054','SP058','SP060','SP061','SP063','SP066','SP067','SP072','SP075','SP076'};
 %subjZebraNoise = {'SP061','SP063','SP066','SP067','SP072','SP075','SP076'};
+
+sPaths = IBL_listSessionPaths('root','Y:\Subjects\SP081',...
+    'protocol',{'trainingChoiceWorld','biasedChoiceWorld'},'mpci',true,...
+    'fullContrastSet',true,'trials',400);
 
 % sPaths = IBL_listSessionPaths('root','Y:\Subjects\',...
 %     'protocol',{'trainingChoiceWorld','biasedChoiceWorld'},'mpci',true,...
@@ -25,8 +34,6 @@ overwrite = true;
 %sPaths = filter_session_paths_by_subject(sPaths,subjLearners);
 %sPaths = filter_session_paths_by_subject(sPaths,subjZebraNoise);
 
-% load sPaths from canonical sessions
-load("canonicalSessions.mat");
 
 %% parameters
 
@@ -211,7 +218,7 @@ params_mov = struct( ...
     );
 
 %params_all = [params_stimSide100, params_stimSide, params_choice, params_feedback, params_block];
-params_all = [params_stimSide100_goCue, params_stimSide_goCue,  params_block_goCue, params_stimSide100, params_stimSide, params_block];
+params_all = [params_stimSide100_goCue, params_stimSide_goCue,  params_choice, params_feedback, params_block_goCue];
 %params_all = [params_stimSide, params_choice, params_feedback, params_mov];
 %params_all = params_stimSide;
 %params_all = params_mov;
