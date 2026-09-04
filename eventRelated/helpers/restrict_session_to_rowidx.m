@@ -1,0 +1,59 @@
+function S = restrict_session_to_rowidx(S, rowIdx)
+% restrict_session_to_rowidx
+%
+% Keep only specified row indices from a loaded session struct.
+
+rowIdx = rowIdx(:);
+
+% --- row-wise fields ---
+rowFields = { ...
+    'chronicUID', ...
+    'globalROI', ...
+    'cellScore', ...
+    'brainIds', ...
+    'fovLabel', ...
+    'isChronic', ...
+    'isResponsive', ...
+    'roiScale', ...
+    'sharedROI'};
+
+for iF = 1:numel(rowFields)
+    fn = rowFields{iF};
+    if isfield(S, fn) && ~isempty(S.(fn))
+        try
+            S.(fn) = S.(fn)(rowIdx, :);
+        catch
+            % ignore non-vector shapes
+        end
+    end
+end
+
+% mlapdv is special (2D row-wise)
+if isfield(S, 'mlapdv') && ~isempty(S.mlapdv)
+    S.mlapdv = S.mlapdv(rowIdx, :);
+end
+
+% --- per-type fields ---
+typeFields = { ...
+    'Diff_even', ...
+    'Diff_odd', ...
+    'MeanPos_even', ...
+    'MeanNeg_even', ...
+    'MeanPos_odd', ...
+    'MeanNeg_odd', ...
+    'MI_even', ...
+    'MI_odd', ...
+    'sortMetric'};
+
+for iF = 1:numel(typeFields)
+    fn = typeFields{iF};
+    if isfield(S, fn) && ~isempty(S.(fn))
+        for s = 1:numel(S.(fn))
+            if ~isempty(S.(fn){s})
+                S.(fn){s} = S.(fn){s}(rowIdx, :);
+            end
+        end
+    end
+end
+
+end

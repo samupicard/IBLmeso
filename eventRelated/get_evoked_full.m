@@ -1,4 +1,20 @@
-function [Evk,Dat,T,badTrials] = get_evoked_full(sig,frameTimes,badframes,trialsTL,evnt,twin_ev,twin_bl,twin_all,timeShifts)
+function [Evk,Dat,T,badTrials,badTrialsEvk] = get_evoked_full(sig,frameTimes,badframes,trialsTL,evnt,twin_ev,twin_bl,twin_all,timeShifts)
+%GET_EVOKED_FULL Return time-averaged responses and full event-aligned data.
+%
+% [Evk,Dat,T,badTrials,badTrialsEvk] = get_evoked_full(...)
+%
+% Evk           : nCells x nTrials mean response in twin_ev (baseline
+%                 subtracted when twin_bl is numeric).
+% Dat           : nCells x nTrials x nTimepoints full PETH in twin_all.
+% T             : relative time vector corresponding to Dat.
+% badTrials     : trial invalid for the FULL PETH (twin_all). 
+% badTrialsEvk  : trial invalid for the event-response calculation only
+%                 (twin_ev and, when used, twin_bl). This is useful when
+%                 Evk is used for tuning statistics: a trial can have a
+%                 valid Evk even when twin_all extends outside valid data.
+%
+% timeShifts can be empty, one scalar shift per cell, or a matrix matching
+% sig (cell x frame).
 
 if nargin < 9
     timeShifts = [];
@@ -7,8 +23,8 @@ if nargin < 8
     twin_all = [-0.9,3.3];
 end
 
-if strcmp(class(twin_bl),'char')
-    if strcmp(twin_bl,'none')
+if ischar(twin_bl) || (isstring(twin_bl) && isscalar(twin_bl))
+    if strcmp(char(twin_bl),'none')
         bl_flag = false;
     else
         warning('Unclear whether to baseline correct. Not doing baseline correction!');
@@ -57,8 +73,10 @@ numframes = numel(T);
 Evk = nan(numcells,numtrials);
 Dat = nan(numcells,numtrials,numframes);
 badTrials = false(1,numtrials);
+badTrialsEvk = false(1,numtrials);
 
 badMask = false(1,nSigFrames);
+badframes = badframes(badframes >= 1 & badframes <= nSigFrames);
 badMask(badframes) = true;
 
 useTimeShifts = ~isempty(timeShifts);
@@ -66,6 +84,13 @@ useTimeShifts = ~isempty(timeShifts);
 if useTimeShifts
     if isvector(timeShifts)
         timeShifts = timeShifts(:);
+        if numel(timeShifts) ~= numcells
+            error('get_evoked_full:InvalidTimeShifts', ...
+                'Vector timeShifts must contain one value per cell (%d).', numcells);
+        end
+    elseif ~isequal(size(timeShifts), size(sig))
+        error('get_evoked_full:InvalidTimeShifts', ...
+            'Matrix timeShifts must have the same size as sig.');
     end
 
     minShift = min(timeShifts(:));
@@ -83,25 +108,20 @@ for iTrial = 1:numtrials
     try
         evnt_t = getEventTimestamp(trialsTL, iTrial, evnt);
 
-        if isempty(evnt_t) || ~isscalar(evnt_t) || ~isfinite(evnt_t) || min(abs(frameTimes - evnt_t)) > (1/Fs)
+        if isempty(evnt_t) || ~isscalar(evnt_t) || ~isfinite(evnt_t) || ...
+                min(abs(frameTimes - evnt_t)) > (1/Fs)
+            badTrialsEvk(iTrial) = true;
             badTrials(iTrial) = true;
             continue
         end
 
         if ~useTimeShifts
-
-            [~,evnt_fr] = min(abs(frameTimes - evnt_t));
-            idx_all = (frwin_all(1):frwin_all(end)) + evnt_fr;
-
-            if any(idx_all < 1) || any(idx_all > nSigFrames) || any(badMask(idx_all))
-                badTrials(iTrial) = true;
-                continue
-            end
-
+            %% Event response validity and value
             evIdx = find(frameTimes >= evnt_t + twin_ev(1) & ...
                          frameTimes <= evnt_t + twin_ev(2));
 
             if isempty(evIdx) || any(badMask(evIdx))
+                badTrialsEvk(iTrial) = true;
                 badTrials(iTrial) = true;
                 continue
             end
@@ -113,41 +133,40 @@ for iTrial = 1:numtrials
                              frameTimes <= evnt_t + twin_bl(2));
 
                 if isempty(blIdx) || any(badMask(blIdx))
+                    badTrialsEvk(iTrial) = true;
                     badTrials(iTrial) = true;
                     continue
                 end
 
                 bl = mean(sig(:,blIdx),2,'omitnan');
-
-                Dat(:,iTrial,:) = sig(:,idx_all) - bl;
                 Evk(:,iTrial) = ev - bl;
             else
-                Dat(:,iTrial,:) = sig(:,idx_all);
+                bl = [];
                 Evk(:,iTrial) = ev;
             end
 
-        else
+            %% Full PETH validity and value
+            [~,evnt_fr] = min(abs(frameTimes - evnt_t));
+            idx_all = (frwin_all(1):frwin_all(end)) + evnt_fr;
 
-            [~,evnt_fr] = min(abs(frameTimes + timeShifts - evnt_t),[],2);
-
-            win_all = frwin_all(1):frwin_all(end);
-            idx_all = evnt_fr + win_all;
-
-            if any(idx_all(:) < 1) || any(idx_all(:) > nSigFrames)
+            if any(idx_all < 1) || any(idx_all > nSigFrames) || any(badMask(idx_all))
                 badTrials(iTrial) = true;
                 continue
             end
 
-            rowIdx = repmat((1:numcells)',1,numframes);
-            lin_all = sub2ind(size(sig),rowIdx,idx_all);
+            if bl_flag
+                Dat(:,iTrial,:) = sig(:,idx_all) - bl;
+            else
+                Dat(:,iTrial,:) = sig(:,idx_all);
+            end
 
-            dat_i = sig(lin_all);
-            badCell = any(badMask(idx_all),2);
-
+        else
+            %% Event response validity and value, allowing cell-specific shifts
             evCand = find(frameTimes >= evnt_t + twin_ev(1) - maxShift & ...
                           frameTimes <= evnt_t + twin_ev(2) - minShift);
 
             if isempty(evCand)
+                badTrialsEvk(iTrial) = true;
                 badTrials(iTrial) = true;
                 continue
             end
@@ -160,25 +179,23 @@ for iTrial = 1:numtrials
 
             evMask = evTimes >= evnt_t + twin_ev(1) & ...
                      evTimes <= evnt_t + twin_ev(2);
-
             evBad = evMask & badMask(evCand);
 
             evVals = sig(:,evCand);
-            evVals(~evMask | isnan(evVals)) = 0;
-
-            evCount = sum(evMask & ~isnan(sig(:,evCand)),2);
+            validEvSamples = evMask & ~isnan(evVals);
+            evVals(~validEvSamples) = 0;
+            evCount = sum(validEvSamples,2);
             evSum = sum(evVals,2);
 
-            badCell = badCell | evCount == 0 | any(evBad,2);
-
+            badCellEvk = evCount == 0 | any(evBad,2);
             ev = evSum ./ evCount;
 
             if bl_flag
-
                 blCand = find(frameTimes >= evnt_t + twin_bl(1) - maxShift & ...
                               frameTimes <= evnt_t + twin_bl(2) - minShift);
 
                 if isempty(blCand)
+                    badTrialsEvk(iTrial) = true;
                     badTrials(iTrial) = true;
                     continue
                 end
@@ -191,120 +208,156 @@ for iTrial = 1:numtrials
 
                 blMask = blTimes >= evnt_t + twin_bl(1) & ...
                          blTimes <= evnt_t + twin_bl(2);
-
                 blBad = blMask & badMask(blCand);
 
                 blVals = sig(:,blCand);
-                blVals(~blMask | isnan(blVals)) = 0;
-
-                blCount = sum(blMask & ~isnan(sig(:,blCand)),2);
+                validBlSamples = blMask & ~isnan(blVals);
+                blVals(~validBlSamples) = 0;
+                blCount = sum(validBlSamples,2);
                 blSum = sum(blVals,2);
 
-                badCell = badCell | blCount == 0 | any(blBad,2);
-
+                badCellEvk = badCellEvk | blCount == 0 | any(blBad,2);
                 bl = blSum ./ blCount;
 
-                goodCell = ~badCell;
-
-                Dat(goodCell,iTrial,:) = dat_i(goodCell,:) - bl(goodCell);
-                Evk(goodCell,iTrial) = ev(goodCell) - bl(goodCell);
-
+                goodCellEvk = ~badCellEvk;
+                Evk(goodCellEvk,iTrial) = ev(goodCellEvk) - bl(goodCellEvk);
             else
-                goodCell = ~badCell;
-
-                Dat(goodCell,iTrial,:) = dat_i(goodCell,:);
-                Evk(goodCell,iTrial) = ev(goodCell);
+                bl = [];
+                goodCellEvk = ~badCellEvk;
+                Evk(goodCellEvk,iTrial) = ev(goodCellEvk);
             end
 
-            if any(badCell)
+            if any(badCellEvk)
+                badTrialsEvk(iTrial) = true;
+            end
+
+            %% Full PETH validity and value
+            % Find the event-centre frame for each cell without constructing
+            % an nCells x nFrames matrix. This was previously the dominant
+            % cost when timeShifts was supplied.
+            if isvector(timeShifts)
+                % One constant time shift per cell. The required unshifted
+                % frame time is simply evnt_t - timeShift. interp1 performs
+                % the nearest-frame lookup in 1-D.
+                targetTimes = evnt_t - timeShifts;
+                evnt_fr = interp1(frameTimes, 1:nSigFrames, targetTimes, ...
+                    'nearest', NaN);
+            else
+                % Frame-dependent shifts cannot be inverted analytically.
+                % Restrict the exhaustive search to frames that could
+                % possibly align to this event given the global shift range.
+                centreCand = find(frameTimes >= evnt_t - maxShift - dt & ...
+                                  frameTimes <= evnt_t - minShift + dt);
+
+                if isempty(centreCand)
+                    badTrials(iTrial) = true;
+                    continue
+                end
+
+                shiftedCentreTimes = frameTimes(centreCand) + timeShifts(:,centreCand);
+                [~,localIdx] = min(abs(shiftedCentreTimes - evnt_t),[],2);
+                evnt_fr = centreCand(localIdx);
+            end
+
+            win_all = frwin_all(1):frwin_all(end);
+            idx_all = evnt_fr + win_all;
+
+            badCellDat = isnan(evnt_fr) | ...
+                         any(idx_all < 1 | idx_all > nSigFrames,2);
+
+            % Only index rows whose whole window is in range. Use direct
+            % column-major linear indexing instead of repmat + sub2ind.
+            inRangeCells = ~badCellDat;
+            if any(inRangeCells)
+                rowsInRange = find(inRangeCells);
+                idxGood = idx_all(inRangeCells,:);
+                lin_all = rowsInRange + (idxGood - 1) * numcells;
+                dat_i = sig(lin_all);
+
+                badCellDat(inRangeCells) = any(badMask(idxGood),2);
+
+                goodCellDat = inRangeCells & ~badCellDat & ~badCellEvk;
+                if any(goodCellDat)
+                    goodRows = find(goodCellDat);
+                    [~,loc] = ismember(goodRows, rowsInRange);
+                    if bl_flag
+                        Dat(goodRows,iTrial,:) = dat_i(loc,:) - bl(goodRows);
+                    else
+                        Dat(goodRows,iTrial,:) = dat_i(loc,:);
+                    end
+                end
+            end
+
+            % A baseline/event failure also makes the full PETH unusable for
+            % that cell because baseline-corrected Dat cannot be constructed.
+            badCellDat = badCellDat | badCellEvk;
+            if any(badCellDat)
                 badTrials(iTrial) = true;
             end
         end
 
     catch
+        badTrialsEvk(iTrial) = true;
         badTrials(iTrial) = true;
     end
 end
 
 fprintf('. Done!\n');
 
-nantrial_cnt = sum(badTrials);
-if nantrial_cnt > 0
-    warning([num2str(nantrial_cnt),' trials had no valid timestamp or matching imaging frames! Values set to NaN.']);
+nBadDat = sum(badTrials);
+if nBadDat > 0
+    warning('%d trials had an invalid full PETH window; Dat values remain NaN for those trials/cells.', nBadDat);
+end
+
+nBadEvk = sum(badTrialsEvk);
+if nBadEvk > 0
+    warning('%d trials had no valid event-response window; Evk values remain NaN for those trials/cells.', nBadEvk);
 end
 
 end
+
 
 function evnt_t = getEventTimestamp(eventData, iTrial, evnt)
 %GETEVENTTIMESTAMP Retrieve one event timestamp.
 %
-% Supports:
-%   table/timetable variable names:
-%       'stimOn_times'
-%       'valveOn'
-%       'toneOn'
-%       'noiseOn'
-%
-%   table variable indices
-%   numeric matrices
-%   cell arrays
+% Supports table/timetable variable names or indices, numeric matrices and
+% cell arrays.
 
 if istable(eventData) || istimetable(eventData)
 
     if ischar(evnt) || (isstring(evnt) && isscalar(evnt))
-
         variableName = char(evnt);
 
-        if ~ismember( ...
-                variableName, ...
-                eventData.Properties.VariableNames)
-
-            error( ...
-                'get_evoked_full:UnknownEvent', ...
-                'Event variable "%s" is not present in the table.', ...
-                variableName);
+        if ~ismember(variableName,eventData.Properties.VariableNames)
+            error('get_evoked_full:UnknownEvent', ...
+                'Event variable "%s" is not present in the table.', variableName);
         end
 
-        evnt_t = eventData{iTrial, variableName};
+        evnt_t = eventData{iTrial,variableName};
 
     elseif isnumeric(evnt) && isscalar(evnt)
-
-        evnt_t = eventData{iTrial, evnt};
-
+        evnt_t = eventData{iTrial,evnt};
     else
-        error( ...
-            'get_evoked_full:InvalidEventSelector', ...
-            ['For table inputs, evnt must be a variable name ' ...
-             'or scalar numeric variable index.']);
+        error('get_evoked_full:InvalidEventSelector', ...
+            'For table inputs, evnt must be a variable name or scalar numeric variable index.');
     end
 
 elseif iscell(eventData)
-
-    evnt_t = eventData{iTrial, evnt};
-
+    evnt_t = eventData{iTrial,evnt};
 elseif isnumeric(eventData) || islogical(eventData)
-
-    evnt_t = eventData(iTrial, evnt);
-
+    evnt_t = eventData(iTrial,evnt);
 else
-    error( ...
-        'get_evoked_full:UnsupportedEventData', ...
-        'Unsupported event-data type: %s.', ...
-        class(eventData));
+    error('get_evoked_full:UnsupportedEventData', ...
+        'Unsupported event-data type: %s.',class(eventData));
 end
 
-% Unwrap a scalar cell.
 if iscell(evnt_t) && isscalar(evnt_t)
     evnt_t = evnt_t{1};
 end
-
-% Convert text timestamps if necessary.
 if ischar(evnt_t) || isstring(evnt_t)
     evnt_t = str2double(string(evnt_t));
 end
-
 if isnumeric(evnt_t) || islogical(evnt_t)
     evnt_t = double(evnt_t);
 end
-
 end
