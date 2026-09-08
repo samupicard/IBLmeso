@@ -4,9 +4,9 @@
 
 saveflag = true;
 loadParquetIfExists = true;   % use saved allROIs_*.parquet when available
-forceReaggregate = true;     % set true to ignore saved parquet files
+forceReaggregate = false;     % set true to ignore saved parquet files
 
-load('canonicalSessions.mat');
+%load('canonicalSessions.mat');
 
 %sPaths = IBL_listSessionPaths('root','Y:\Subjects','protocol',{'trainingChoiceWorld'},'mpci',true);
 % sPaths = IBL_listSessionPaths('root','Y:\Subjects',...
@@ -29,23 +29,38 @@ svPath = 'C:\Users\Samuel\Documents\MATLAB\Code\IBLmeso\results';
 %     'ccu_feedback_0to400_feedbackType'};
 
 %% generate statNames by base/time window
-%twin_ev = {[-0.6,-0.4],[-0.4,-0.2],[-0.2,0],[0,0.2],[0.2,0.4],[0.4,0.6]};
-twin_ev = {[-0.3,-0.1],[-0.1,0.1],[0.1,0.3],[0.3,0.5],[0.5,0.7]};
 
-bases = {
-    {'ccMeanDiff','goCue','stimSide'}
-    {'ccMeanDiff','goCue','stimSide100'}
-    {'ccMeanDiff','choiceMovement','choice'}
-    {'ccMeanDiff','feedback','feedbackType'}
-    ...%{'ccMean','firstMovement','movement'}
+saveBases = {'ccu_goCue_0to400_contrastDiff',...
+    'ccu_goCue_0to400_stimSide',...
+    'ccu_choiceMovement_-200to200_choice',...
+    'ccu_feedback_0to400_feedbackType'...
     };
 
-baseLabels = { ...
-    'STIM SIDE', ...
-    'STIM SIDE 100', ...
-    'CHOICE', ...
-    'FEEDBACK'};%, ...
-%'MOVEMENT'};
+twins = cellfun(@(s) sscanf(s, '%*[^_]_%*[^_]_%dto%d_')' / 1000, ...
+    saveBases, 'UniformOutput', false);
+
+baseLabels = cellfun(@(s) regexprep(s, '^([^_]+)_[^_]+_[^_]+_(.+)$', '$1 $2'), ...
+    saveBases, 'UniformOutput', false);
+
+cmaps_frac_perBase = {[0.05,0.2],[0.05,0.2],[0.05,0.2],[0.05,0.4]};
+
+%twin_ev = {[-0.6,-0.4],[-0.4,-0.2],[-0.2,0],[0,0.2],[0.2,0.4],[0.4,0.6]};
+%twin_ev = {[-0.3,-0.1],[-0.1,0.1],[0.1,0.3],[0.3,0.5],[0.5,0.7]};
+
+% bases = {
+%     {'ccMeanDiff','goCue','stimSide'}
+%     {'ccMeanDiff','goCue','stimSide100'}
+%     {'ccMeanDiff','choiceMovement','choice'}
+%     {'ccMeanDiff','feedback','feedbackType'}
+%     ...%{'ccMean','firstMovement','movement'}
+%     };
+
+% baseLabels = { ...
+%     'STIM SIDE', ...
+%     'STIM SIDE 100', ...
+%     'CHOICE', ...
+%     'FEEDBACK'};%, ...
+% %'MOVEMENT'};
 
 %bases = {{'ccMeanDiff','goCue','stimSide100'}};
 %baseLabels = {'STIM SIDE 100'};
@@ -56,22 +71,27 @@ baseLabels = { ...
 %cmaps_frac_perBase = {[0.05,0.2],[0.05,0.2],[0.05,0.4]};
 %cmaps_meds_perBase = {[-2,2],[-2,2],[-3,3]};
 
-cmaps_frac_perBase = {[0.05,0.2],[0.05,0.2],[0.05,0.2],[0.05,0.4]};
-cmaps_meds_perBase = {[-2,2],[-2,2],[-2,2],[-3,3]};
+%cmaps_frac_perBase = {[0.05,0.2],[0.05,0.2],[0.05,0.2],[0.05,0.4]};
+%cmaps_meds_perBase = {[-2,2],[-2,2],[-2,2],[-3,3]};
 
 %cmaps_frac_perBase = {[0.05,0.2],[0.05,0.2],[0.05,0.4],[0.05,0.4]};
 %cmaps_meds_perBase = {[-2,2],[-2,2],[-3,3],[-3,3]};
 
+
+
 %% make one figure per stat/base
 if true
-    for b = 1:numel(bases)
+    for b = 1:numel(saveBases)
 
-        bparts = bases{b};
-        saveBase = sprintf('%s_%s_%s', bparts{1}, bparts{2}, bparts{3});
+        %bparts = bases{b};
+        %saveBase = sprintf('%s_%s_%s', bparts{1}, bparts{2}, bparts{3});
+        saveBase = saveBases{b};
         outBase = ['ROIdensity_timecourse_',saveBase];
+        twin_ev = twins(b);
 
         fig = figure( ...
-            'Position',[1500,-200,900,700], ...
+            ...%'Position',[1500,-200,900,700], ...
+            'Position',[1500,-200,300,700], ...
             'Name',outBase, ...
             'Color','k');
 
@@ -88,7 +108,8 @@ if true
             t = twin_ev{i} * 1000;
             t_mid = round(mean(t));
 
-            statName = sprintf('%s_%s_%dto%d_%s', bparts{1}, bparts{2}, t(1), t(2), bparts{3});
+            %statName = sprintf('%s_%s_%dto%d_%s', bparts{1}, bparts{2}, t(1), t(2), bparts{3});
+            statName = saveBase;
 
             % make/load big table with all ROIs
             parquetPath = fullfile(svPath, ['allROIs_', statName, '.parquet']);
@@ -130,8 +151,8 @@ if true
             D.v_clim_sess = [0 10];
 
             % column label
-            %colLabel = sprintf('%d to %d ms', t(1), t(2));
-            colLabel = sprintf('%d ms',t_mid);
+            colLabel = sprintf('%d to %d ms', t(1), t(2));
+            %colLabel = sprintf('%d ms',t_mid);
 
             col = i;
 
@@ -173,9 +194,14 @@ if true
                 'Color','k');
 
             axMap = axes(figMap, 'Color','k');
+            
+            T_in = T_red_unif;
+            T_in.stat = T_in.stat-0.5;
+            alpha2 = 0.025;
 
-            IBL_plotROISummaryMap(T_red_unif, 'ax', axMap, ...
-                'alpha2',0.025,...
+            IBL_plotROISummaryMap(T_in, 'ax', axMap, ...
+                'alpha2',alpha2,...
+                'sizeScale', 5, ...
                 'plotNonsigAsDots', true);
 
             title(axMap, sprintf('%s | %s', baseLabels{b}, colLabel), ...
@@ -188,7 +214,9 @@ if true
                 end
 
                 mapOut = fullfile(svPath, ...
-                    sprintf('ROISummaryMap_%s_%dms.png', saveBase, t_mid));
+                    ...%sprintf('ROISummaryMap_%s_%dms.png', saveBase, t_mid));
+                    sprintf('ROISummaryMap_%s.png', saveBase));
+
 
                 exportgraphics(figMap, mapOut, ...
                     'Resolution', 300, ...
@@ -196,6 +224,28 @@ if true
             end
 
             close(figMap);
+            
+            %plot distribution of stat
+            figDistr = figure(...
+                'Position',[1900,-200,500,300],...
+                'Name',['ROISummaryDistr_', statName]); 
+            hold on;
+            edges = linspace(quantile(T.stat,0.001),quantile(T.stat,0.999),100);
+            histogram(T(T.p<alpha2,:).stat,edges,...
+                'Normalization','count');
+            histogram(T(T.p>1-alpha2,:).stat,edges,...
+                'Normalization','count');
+            histogram(T(T.p>alpha2 & T.p<1-alpha2,:).stat,edges,...
+                'Normalization','count','FaceColor',[.5 .5 .5]);
+            xlabel(regexprep(saveBase, '^([^_]+)_.*$', '$1'));
+            ylabel('count');
+            title(statName,'Interpreter','none');
+            distrOut = fullfile(svPath, ...
+                sprintf('ROISummaryDistr_%s.png', saveBase));
+            exportgraphics(figDistr, distrOut, ...
+                'Resolution', 300, ...
+                'BackgroundColor', 'current');
+            close(figDistr);
 
         end
 
