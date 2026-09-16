@@ -50,6 +50,8 @@ function [neuralQMs, fovQMs] = get_neuralQMs(F,Fneu,varargin)
 %                       main peak height. Values near 0 indicate a roughly
 %                       monotonically decreasing upper tail; larger values
 %                       indicate a pronounced secondary mode.
+% NB: For ROIs with zero detrended fluorescence variance, all QMs except 'var'
+% are returned as NaN.
 %
 % fovQMs            : scalar struct containing the mean of each neural QM
 %                     across ROIs for which iscell == true.
@@ -266,9 +268,18 @@ rebound = tailCounts - runningMin;
 upperRebound = ...
     max(rebound,[],1,'omitnan') ./ (peakHeight + eps);
 
-% Undefined for ROIs with negligible robust fluorescence range
-badRange = (hi-lo) <= 0;
-upperRebound(badRange) = NaN;
+% For ROIs with zero variance, all QMs other than var are undefined
+zeroVar = vars == 0;
+
+noiseLevels(zeroVar) = NaN;
+means(zeroVar) = NaN;
+stds(zeroVar) = NaN;
+skews(zeroVar) = NaN;
+snrs(zeroVar) = NaN;
+transientSNRs(zeroVar) = NaN;
+residualNeuropilR2(zeroVar) = NaN;
+saturationRatios(zeroVar) = NaN;
+upperRebound(zeroVar) = NaN;
 
 %% Return neural quality metrics
 

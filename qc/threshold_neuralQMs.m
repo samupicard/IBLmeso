@@ -46,6 +46,9 @@ for iMetric = 1:nMetrics
                 thresholds.(metricName).passIf,metricName);
     end
 
+    % NaN means this metric is not applicable, so do not count it as a failure
+    pass(isnan(vals),iMetric) = true;
+
 end
 
 passTable = array2table(pass,'VariableNames',metricNames);

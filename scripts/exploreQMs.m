@@ -1,7 +1,8 @@
 %% prep
 
-%datpath = 'Y:\Subjects\SP081\2026-09-10\001';
-datpath = 'Y:\Subjects\SP076\2025-11-10\001';
+%datpath = 'Y:\Subjects\SP081\2026-09-10\001'; %multi-depth, some saturated ROIs
+datpath = 'Y:\Subjects\SP076\2025-11-10\001'; %some low SNR FOVs
+
 
 % Load
 splitPaths = split(datpath,filesep);
@@ -147,33 +148,22 @@ for iMetric = 1:numel(metricNames)
 
     % Select top and bottom pair, the pair around the threshold, and the rest evenly spaced in rank
     nThis = min(nExamples,numel(rankedROIs));
-nRanked = numel(rankedROIs);
+    nRanked = numel(rankedROIs);
 
-if nThis <= 4
+    if nThis <= 4
 
-    exampleRanks = unique(round(linspace(1,nRanked,nThis)));
+        exampleRanks = unique(round(linspace(1,nRanked,nThis)));
 
-else
+    else
 
-    rankedPass = passTable{rankedROIs,metricName};
+        rankedPass = passTable{rankedROIs,metricName};
 
-    % Always include two best and two worst
-    edgeRanks = [1 2 nRanked-1 nRanked];
+        % ROIs that pass every QC metric
+        allPass = all(passTable{:,:},2);
+        rankedAllPass = allPass(rankedROIs);
+        allPassRanks = find(rankedAllPass);
 
-    % Find pass/fail boundary in the good -> bad ranking
-    passRanks = find(rankedPass);
-    failRanks = find(~rankedPass);
-
-    canSeparate = ...
-        ~isempty(passRanks) && ...
-        ~isempty(failRanks) && ...
-        passRanks(end) < failRanks(1);
-
-    if canSeparate
-
-        closestPassRank = passRanks(end);
-
-        % Find ROIs that fail ONLY this metric
+        % ROIs that fail ONLY this metric
         otherMetrics = setdiff(metricNames,metricName,'stable');
 
         failOnlyThisMetric = ...
@@ -183,78 +173,122 @@ else
         rankedFailOnly = failOnlyThisMetric(rankedROIs);
         failOnlyRanks = find(rankedFailOnly);
 
-        reservedRanks = [edgeRanks closestPassRank];
+        % Find pass/fail boundary in the good -> bad ranking
+        passRanks = find(rankedPass);
+        failRanks = find(~rankedPass);
 
-        if ~isempty(failOnlyRanks)
+        canSeparate = ...
+            ~isempty(passRanks) && ...
+            ~isempty(failRanks) && ...
+            passRanks(end) < failRanks(1);
 
-            % Prefer exclusive failures for metric-specific diagnostics
-
-            % Exclusive failure closest to threshold
-            closestFailOnlyRank = failOnlyRanks(1);
-            reservedRanks(end+1) = closestFailOnlyRank;
-
-            % Also include most extreme exclusive failure if different
-            worstFailOnlyRank = failOnlyRanks(end);
-
-            if worstFailOnlyRank ~= closestFailOnlyRank
-                reservedRanks(end+1) = worstFailOnlyRank;
+        if canSeparate
+            if numel(allPassRanks) >= 2
+                bestRanks = allPassRanks(1:2);
+            else
+                bestRanks = [1 2];
             end
 
+            if ~isempty(allPassRanks)
+                closestPassRank = allPassRanks(end);
+            else
+                closestPassRank = passRanks(end);
+            end
+
+            if ~isempty(failOnlyRanks)
+                closestFailRank = failOnlyRanks(1);
+                worstFailOnlyRank = failOnlyRanks(end);
+            else
+                closestFailRank = failRanks(1);
+                worstFailOnlyRank = [];
+            end
+
+            worstRanks = [nRanked-1 nRanked];
+
+            reservedRanks = [ ...
+                bestRanks(:)', ...
+                closestPassRank, ...
+                closestFailRank, ...
+                worstFailOnlyRank(:)', ...
+                worstRanks(:)'];
+
+            reservedRanks = unique(reservedRanks);
+
+            % -------------------------------------------------------------
+            % Fill remaining slots
+            % Prefer:
+            %   - ROIs passing ALL metrics
+            %   - ROIs failing ONLY this metric
+            % -------------------------------------------------------------
+
+            nRemaining = nThis - numel(reservedRanks);
+
+            if nRemaining > 0
+
+                preferredRanks = find(rankedAllPass | rankedFailOnly);
+                preferredRanks = setdiff(preferredRanks,reservedRanks);
+
+                if numel(preferredRanks) >= nRemaining
+
+                    idx = round(linspace(1,numel(preferredRanks),nRemaining));
+                    middleRanks = preferredRanks(idx);
+
+                else
+
+                    % Use all preferred examples first
+                    middleRanks = preferredRanks;
+
+                    nStillNeeded = nRemaining - numel(middleRanks);
+
+                    % Then fill any remaining slots from the full rank range
+                    candidateRanks = setdiff( ...
+                        1:nRanked, ...
+                        [reservedRanks middleRanks]);
+
+                    if nStillNeeded > 0 && ~isempty(candidateRanks)
+
+                        idx = round(linspace(1,numel(candidateRanks), ...
+                            min(nStillNeeded,numel(candidateRanks))));
+
+                        middleRanks = [middleRanks(:)' candidateRanks(idx(:))'];
+
+                    end
+
+                end
+
+            else
+                middleRanks = [];
+            end
+
+            % Final display order always remains good -> bad
+            exampleRanks = sort(unique([reservedRanks(:)' middleRanks(:)']));
+
         else
 
-            % No exclusive failures available:
-            % use closest failing ROI regardless of other QC failures
-            reservedRanks(end+1) = failRanks(1);
+            % Fallback if there is no clean pass/fail separation
+            edgeRanks = [1 2 nRanked-1 nRanked];
+
+            nRemaining = nThis - numel(unique(edgeRanks));
+            candidateRanks = 3:nRanked-2;
+
+            if nRemaining > 0 && ~isempty(candidateRanks)
+
+                idx = round(linspace(1,numel(candidateRanks), ...
+                    min(nRemaining,numel(candidateRanks))));
+
+                middleRanks = candidateRanks(idx);
+
+            else
+                middleRanks = [];
+            end
+
+            exampleRanks = sort(unique([edgeRanks middleRanks]));
 
         end
-
-        reservedRanks = unique(reservedRanks);
-
-        % Fill remaining slots approximately evenly in rank
-        nRemaining = nThis - numel(reservedRanks);
-
-        candidateRanks = setdiff(1:nRanked,reservedRanks);
-
-        if nRemaining > 0 && ~isempty(candidateRanks)
-
-            idx = round(linspace(1,numel(candidateRanks), ...
-                min(nRemaining,numel(candidateRanks))));
-
-            middleRanks = candidateRanks(idx);
-
-        else
-            middleRanks = [];
-        end
-
-        % Preserve final good -> bad ordering
-        exampleRanks = sort(unique([reservedRanks middleRanks]));
-
-    else
-
-        % Fallback if there is no clean pass/fail separation
-        edgeRanks = [1 2 nRanked-1 nRanked];
-
-        nRemaining = nThis - numel(unique(edgeRanks));
-        candidateRanks = 3:nRanked-2;
-
-        if nRemaining > 0 && ~isempty(candidateRanks)
-
-            idx = round(linspace(1,numel(candidateRanks), ...
-                min(nRemaining,numel(candidateRanks))));
-
-            middleRanks = candidateRanks(idx);
-
-        else
-            middleRanks = [];
-        end
-
-        exampleRanks = sort(unique([edgeRanks middleRanks]));
 
     end
 
-end
-
-exampleROIs = rankedROIs(exampleRanks);
+    exampleROIs = rankedROIs(exampleRanks);
 
     figure('Name',sprintf('QC examples: %s',metricName));
 
@@ -321,7 +355,13 @@ exampleROIs = rankedROIs(exampleRanks);
         box off
     end
 
-    title(tl,sprintf('%s: examples ranked from good to bad',metricName), ...
+    nFailMetric = sum(~passTable{:,metricName});
+    nTotalMetric = height(passTable);
+
+    title(tl,sprintf( ...
+        '%s: examples ranked from good to bad | %d/%d fail (%.1f%%)', ...
+        metricName,nFailMetric,nTotalMetric, ...
+        100*nFailMetric/nTotalMetric), ...
         'Interpreter','none');
 
     linkaxes(ax,'x');
@@ -334,7 +374,7 @@ end
 metricNames = passTable.Properties.VariableNames;
 nMetrics = numel(metricNames);
 
-nCols = 3;
+nCols = 4;
 nRows = ceil(nMetrics/nCols);
 
 figure('Name','Neural QC metric distributions');
@@ -364,7 +404,12 @@ for iMetric = 1:nMetrics
     end
 
     % Robust plotting range to avoid a few extreme outliers dominating
-    xLim = prctile(allVals,[0.5 99.5]);
+    xLim = prctile(allVals,[0.05 99.9]);
+
+    % Make sure the QC threshold is included in the plotting range
+    threshold = thresholds.(metricName).value;
+    xLim(1) = min(xLim(1),threshold);
+    xLim(2) = max(xLim(2),threshold);
 
     if xLim(1) == xLim(2)
         xLim = [min(allVals) max(allVals)];
@@ -374,28 +419,38 @@ for iMetric = 1:nMetrics
         xLim = xLim + [-0.5 0.5];
     end
 
-    edges = linspace(xLim(1),xLim(2),31);
+    edges = linspace(xLim(1),xLim(2),51);
 
     histogram(ax,cellVals,edges, ...
         'Normalization','probability', ...
         'DisplayStyle','stairs', ...
         'LineWidth',1.5, ...
-        'DisplayName','Cell');
+        'DisplayName',sprintf('Cell (n=%d)',length(cellVals)));
 
     histogram(ax,nonCellVals,edges, ...
         'Normalization','probability', ...
         'DisplayStyle','stairs', ...
         'LineWidth',1.5, ...
-        'DisplayName','Non-cell');
+        'DisplayName',sprintf('Non-cell (n=%d)',length(nonCellVals)));
 
     % QC threshold
     threshold = thresholds.(metricName).value;
+    passIf = thresholds.(metricName).passIf;
+
+    if ismember(passIf, {'<','<='})
+        labelSide = 'left';
+    else
+        labelSide = 'right';
+    end
 
     xline(ax,threshold,'--', ...
         sprintf('%s %.3g', ...
         thresholds.(metricName).passIf,threshold), ...
         'LineWidth',1.2, ...
-        'LabelVerticalAlignment','middle');
+        'LabelVerticalAlignment','top',...
+        'LabelHorizontalAlignment',labelSide, ...
+        'LabelOrientation','horizontal',...
+        'DisplayName','threshold');
 
     xlim(ax,xLim);
 
