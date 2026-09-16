@@ -1,7 +1,7 @@
 function passTable = threshold_neuralQMs(neuralQMs, thresholds)
 % Threshold neural quality metrics.
 %
-% INPUT
+% INPUTS
 % neuralQMs  : 1 x nROIs struct containing neural quality metrics
 % thresholds : optional threshold struct. If omitted, uses defaults from
 %              get_neuralQMThresholds
@@ -13,40 +13,41 @@ if nargin < 2 || isempty(thresholds)
     thresholds = get_neuralQMThresholds();
 end
 
-% Convert struct array to vectors
-noiseLevel         = [neuralQMs.noiseLevel]';
-meanVal            = [neuralQMs.mean]';
-stdVal             = [neuralQMs.std]';
-skewVal            = [neuralQMs.skew]';
-varVal             = [neuralQMs.var]';
-snrVar             = [neuralQMs.snrVar]';
-snrTransient       = [neuralQMs.snrTransient]';
-residualNeuropilR2 = [neuralQMs.residualNeuropilR2]';
-saturationRatio    = [neuralQMs.saturationRatio]';
-upperRebound       = [neuralQMs.upperRebound]';
+qmTable = struct2table(neuralQMs);
+metricNames = fieldnames(thresholds);
 
-% Apply thresholds
-passTable = table( ...
-    noiseLevel         <  thresholds.noiseLevel, ...
-    meanVal            >  thresholds.mean, ...
-    stdVal             >= thresholds.std, ...
-    skewVal            >  thresholds.skew, ...
-    varVal             >  thresholds.var, ...
-    snrVar             >  thresholds.snrVar, ...
-    snrTransient       >  thresholds.snrTransient, ...
-    residualNeuropilR2 <= thresholds.residualNeuropilR2, ...
-    saturationRatio    <  thresholds.saturationRatio, ...
-    upperRebound       <  thresholds.upperRebound, ...
-    'VariableNames', { ...
-        'noiseLevel', ...
-        'mean', ...
-        'std', ...
-        'skew', ...
-        'var', ...
-        'snrVar', ...
-        'snrTransient', ...
-        'residualNeuropilR2', ...
-        'saturationRatio', ...
-        'upperRebound'});
+nROIs = height(qmTable);
+nMetrics = numel(metricNames);
+
+pass = false(nROIs,nMetrics);
+
+for iMetric = 1:nMetrics
+
+    metricName = metricNames{iMetric};
+
+    assert(ismember(metricName,qmTable.Properties.VariableNames), ...
+        'Metric "%s" is defined in thresholds but missing from neuralQMs.', ...
+        metricName);
+
+    vals = qmTable.(metricName);
+    thr = thresholds.(metricName).value;
+
+    switch thresholds.(metricName).passIf
+        case '<'
+            pass(:,iMetric) = vals < thr;
+        case '<='
+            pass(:,iMetric) = vals <= thr;
+        case '>'
+            pass(:,iMetric) = vals > thr;
+        case '>='
+            pass(:,iMetric) = vals >= thr;
+        otherwise
+            error('Unknown passIf "%s" for metric "%s".', ...
+                thresholds.(metricName).passIf,metricName);
+    end
+
+end
+
+passTable = array2table(pass,'VariableNames',metricNames);
 
 end

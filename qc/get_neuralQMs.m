@@ -75,7 +75,7 @@ defaultNeuropilFactor = 0.7;
 defaultFr = 7;
 defaultIscell = true(1,nROIs);
 defaultBadframes = false(nTimepoints,1);
-defaultSaturationTol = 0.01;
+defaultSaturationTol = 0.02;
 defaultDetrendWindow = 60; % seconds
 
 p = inputParser;
