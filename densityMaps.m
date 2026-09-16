@@ -4,9 +4,11 @@
 
 saveflag = true;
 loadParquetIfExists = true;   % use saved allROIs_*.parquet when available
-forceReaggregate = false;     % set true to ignore saved parquet files
+forceReaggregate = true;     % set true to ignore saved parquet files
 
 %load('canonicalSessions.mat');
+%sPaths = goodSess;
+sPaths = sPaths_SP058;
 
 %sPaths = IBL_listSessionPaths('root','Y:\Subjects','protocol',{'trainingChoiceWorld'},'mpci',true);
 % sPaths = IBL_listSessionPaths('root','Y:\Subjects',...
@@ -21,7 +23,7 @@ forceReaggregate = false;     % set true to ignore saved parquet files
 %svPath = 'C:\Users\Samuel\Desktop\DataClub_2026-04\results\bCW';
 %svPath = 'C:\Users\Samuel\Documents\2PI\mesoscope_active\analysis\PETH\densityMaps\bCW_SP072_2sessions';
 %svPath = 'C:\Users\Samuel\Documents\2PI\mesoscope_active\analysis\PETH\densityMaps\passiveMovie';
-svPath = 'C:\Users\Samuel\Documents\MATLAB\Code\IBLmeso\results';
+svPath = 'C:\Users\Samuel\Documents\MATLAB\Code\IBLmeso\results\exampleAnimal';
 
 % statNames = {...
 %     'ccu_stimOn_0to400_stimSide100',...
@@ -148,7 +150,7 @@ if true
             % compute density maps
             D = IBL_computeROIdensityMaps(T);
 
-            D.v_clim_sess = [0 10];
+            D.v_clim_sess = [0 1];
 
             % column label
             colLabel = sprintf('%d to %d ms', t(1), t(2));
@@ -225,27 +227,27 @@ if true
 
             close(figMap);
             
-            %plot distribution of stat
-            figDistr = figure(...
-                'Position',[1900,-200,500,300],...
-                'Name',['ROISummaryDistr_', statName]); 
-            hold on;
-            edges = linspace(quantile(T.stat,0.001),quantile(T.stat,0.999),100);
-            histogram(T(T.p<alpha2,:).stat,edges,...
-                'Normalization','count');
-            histogram(T(T.p>1-alpha2,:).stat,edges,...
-                'Normalization','count');
-            histogram(T(T.p>alpha2 & T.p<1-alpha2,:).stat,edges,...
-                'Normalization','count','FaceColor',[.5 .5 .5]);
-            xlabel(regexprep(saveBase, '^([^_]+)_.*$', '$1'));
-            ylabel('count');
-            title(statName,'Interpreter','none');
-            distrOut = fullfile(svPath, ...
-                sprintf('ROISummaryDistr_%s.png', saveBase));
-            exportgraphics(figDistr, distrOut, ...
-                'Resolution', 300, ...
-                'BackgroundColor', 'current');
-            close(figDistr);
+            % %plot distribution of stat
+            % figDistr = figure(...
+            %     'Position',[1900,-200,500,300],...
+            %     'Name',['ROISummaryDistr_', statName]); 
+            % hold on;
+            % edges = linspace(quantile(T.stat,0.001),quantile(T.stat,0.999),100);
+            % histogram(T(T.p<alpha2,:).stat,edges,...
+            %     'Normalization','count');
+            % histogram(T(T.p>1-alpha2,:).stat,edges,...
+            %     'Normalization','count');
+            % histogram(T(T.p>alpha2 & T.p<1-alpha2,:).stat,edges,...
+            %     'Normalization','count','FaceColor',[.5 .5 .5]);
+            % xlabel(regexprep(saveBase, '^([^_]+)_.*$', '$1'));
+            % ylabel('count');
+            % title(statName,'Interpreter','none');
+            % distrOut = fullfile(svPath, ...
+            %     sprintf('ROISummaryDistr_%s.png', saveBase));
+            % exportgraphics(figDistr, distrOut, ...
+            %     'Resolution', 300, ...
+            %     'BackgroundColor', 'current');
+            % close(figDistr);
 
         end
 

@@ -33,11 +33,21 @@ p = inputParser;
 
 p.addParameter('classifierThresh', 0.5, @(x)isnumeric(x) && isscalar(x));
 p.addParameter('onlyResponsive', true, @(x)islogical(x) || isnumeric(x));
-p.addParameter('onlyTuned', false, @(x)islogical(x) || isnumeric(x));
+p.addParameter('onlyTuned', {}, @(x) isempty(x) || ischar(x) || isstring(x) || iscellstr(x));
 p.addParameter('onlyChronic', false, @(x)islogical(x) || isnumeric(x));
 
 p.addParameter('region', {}, @(x) iscell(x) && all(cellfun(@ischar, x)));
 p.addParameter('stPath', 'C:\Users\Samuel\Documents\GitHub\allenCCF\structure_tree_safe_2017.csv', @(s)ischar(s) || isstring(s));
+
+p.addParameter('positionROI', [], @(x) ...
+    isempty(x) || ...
+    (isnumeric(x) && isequal(size(x),[1 2])) || ...
+    (isnumeric(x) && isequal(size(x),[1 3])) || ...
+    (isnumeric(x) && isequal(size(x),[4 2])) || ...
+    (isnumeric(x) && isequal(size(x),[8 3])));
+
+p.addParameter('positionRadius', 250, @(x) ...
+    isnumeric(x) && isscalar(x) && x > 10);   % microns
 
 % Can be:
 %   []        -> use get_twins(evnt, subtype) for each type
@@ -97,7 +107,7 @@ d = d(ord);
 
 %% discover PETH types
 preferredOrder = { ...
-    'stimOn_contrastDiff', ...
+    'stimOn_stimSide',...
     'choiceMovement_choice', ...
     'feedback_feedbackType', ...
     'stimOn_probabilityLeft'};
@@ -109,13 +119,13 @@ if isempty(pethTypes)
 end
 
 if ~isempty(opt.pethTypes)
-    req = cellstr(string(opt.pethTypes));
-    pethTypes = pethTypes(ismember(pethTypes, req));
+    match = matchNamesByPattern(pethTypes, opt.pethTypes);
+    pethTypes = pethTypes(match);
 end
 
 if ~isempty(opt.excludePethTypes)
-    exc = cellstr(string(opt.excludePethTypes));
-    pethTypes = pethTypes(~ismember(pethTypes, exc));
+    match = matchNamesByPattern(pethTypes, opt.excludePethTypes);
+    pethTypes = pethTypes(~match);
 end
 
 if isempty(pethTypes)
@@ -297,17 +307,23 @@ for i = 1:numel(d)
     respFile = fullfile(fovFolder, 'mpciROIs.taskResponsiveP.tsv');
     tunedFile = fullfile(fovFolder, 'mpciROIs.taskTunedP.tsv');
     cuidFile = fullfile(fovFolder, 'mpciROIs.clusterUIDs.csv');
+    mlapdvFile = fullfile(fovFolder, 'mpciROIs.mlapdv_estimate.npy');
 
-    if ~isfile(cellFile) || ~isfile(brnFile) || ~isfile(typeFile)
-        warning('Missing classifier/brainLocation/roiType files in %s (skipping FOV)', fovFolder);
+    if ~isfile(cellFile) || ~isfile(brnFile) || ~isfile(typeFile) || ~isfile(mlapdvFile)
+        warning('Missing classifier/brainLocation/roiType/mlapdv files in %s (skipping FOV)', ...
+            fovFolder);
         continue
     end
 
-    cellScore = readNPY(cellFile);  cellScore = cellScore(:);
-    brainIds  = readNPY(brnFile);   brainIds  = brainIds(:);
-    roiTypes  = readNPY(typeFile);  roiTypes  = roiTypes(:);
+    cellScore = readNPY(cellFile);    cellScore = cellScore(:);
+    brainIds  = readNPY(brnFile);     brainIds  = brainIds(:);
+    roiTypes  = readNPY(typeFile);    roiTypes  = roiTypes(:);
+    mlapdv    = readNPY(mlapdvFile);
 
-    if numel(cellScore) ~= numel(brainIds) || numel(cellScore) ~= numel(roiTypes)
+    if numel(cellScore) ~= numel(brainIds) || ...
+            numel(cellScore) ~= numel(roiTypes) || ...
+            size(mlapdv,1) ~= numel(cellScore)
+
         warning('ROI metadata size mismatch in %s (skipping FOV)', fovFolder);
         continue
     end
@@ -369,51 +385,60 @@ for i = 1:numel(d)
         end
     end
 
-    % tuned filter
+    % tuned
     taskTuned = true(nRois,1);
-    if opt.onlyTuned
-        if isfile(tunedFile)
+
+    if ~isempty(opt.onlyTuned)
+
+        % Allow one or more exact names / wildcard patterns.
+        tunedPatterns = cellstr(string(opt.onlyTuned));
+
+        if ~isfile(tunedFile)
+            warning('Missing %s; excluding all ROIs from this FOV because onlyTuned was requested.', ...
+                tunedFile);
+            taskTuned(:) = false;
+
+        else
             try
                 tunedTab = readtable(tunedFile, ...
                     'FileType','text', ...
                     'Delimiter','\t', ...
                     'VariableNamingRule','preserve');
-                tunedNames = string(tunedTab.Properties.VariableNames);
-                tunedPvals = table2array(tunedTab);
 
-                if size(tunedPvals,1) ~= nRois
-                    warning('Tuned table size mismatch in %s; using all ROIs.', fovFolder);
+                if height(tunedTab) ~= nRois
+                    warning(['Tuned table size mismatch in %s ' ...
+                        '(table=%d, ROIs=%d); excluding all ROIs from this FOV.'], ...
+                        fovFolder, height(tunedTab), nRois);
+                    taskTuned(:) = false;
+
                 else
-                    if islogical(opt.onlyTuned)
-                        taskTuned = any(tunedPvals < (0.05 / size(tunedPvals,2)), 2);
+                    tunedNames = cellstr(tunedTab.Properties.VariableNames);
+
+                    selIdx = find(matchNamesByPattern(tunedNames, opt.onlyTuned));
+
+                    if isempty(selIdx)
+                        warning(['No columns in %s matched onlyTuned pattern(s): %s. ' ...
+                            'Excluding all ROIs from this FOV.'], ...
+                            tunedFile, strjoin(cellstr(string(opt.onlyTuned)), ', '));
+
+                        taskTuned(:) = false;
+
                     else
-                        selIdx = [];
+                        selP = table2array(tunedTab(:,selIdx));
 
-                        if isnumeric(opt.onlyTuned)
-                            selIdx = opt.onlyTuned(:)';
-                        elseif ischar(opt.onlyTuned) || isstring(opt.onlyTuned)
-                            selNames = string(opt.onlyTuned);
-                            selIdx = find(ismember(tunedNames, selNames));
-                        elseif iscellstr(opt.onlyTuned) || iscell(opt.onlyTuned)
-                            selNames = string(opt.onlyTuned);
-                            selIdx = find(ismember(tunedNames, selNames));
-                        end
+                        % Apply pseudo-session p-value threshold.
+                        taskTuned = any((selP < 0.025) | (selP > 0.975), 2); %2-sided
+                        %taskTuned = any((selP < 0.025), 2); %1-sided (lo)
+                        %taskTuned = any((selP > 0.975), 2); %1-sided (hi)
 
-                        selIdx = selIdx(selIdx >= 1 & selIdx <= size(tunedPvals,2));
-
-                        if isempty(selIdx)
-                            warning('Requested tuning selection not found in %s; using all ROIs.', fovFolder);
-                        else
-                            selP = tunedPvals(:, selIdx);
-                            taskTuned = any((selP < 0.025) | (selP > 0.975), 2);
-                        end
                     end
                 end
+
             catch ME
-                warning('Could not load %s (%s). Using all ROIs for tuning filter.', tunedFile, ME.message);
+                warning('Could not load/filter %s (%s). Excluding all ROIs from this FOV.', ...
+                    tunedFile, ME.message);
+                taskTuned(:) = false;
             end
-        else
-            warning('Could not find mpciROIs.taskTunedP.tsv in %s; using all ROIs.', fovFolder);
         end
     end
 
@@ -428,12 +453,68 @@ for i = 1:numel(d)
         isRegion = true(nRois,1);
     end
 
+    % position filter
+    if isempty(opt.positionROI)
+
+        isPosition = true(nRois,1);
+
+    elseif isequal(size(opt.positionROI), [1 2])
+
+        % Single ML/AP point:
+        % retain all ROIs within a cylinder of radius positionRadius.
+        centre = opt.positionROI;
+
+        dp = hypot( ...
+            mlapdv(:,1) - centre(1), ...
+            mlapdv(:,2) - centre(2));
+
+        isPosition = dp <= opt.positionRadius;
+        isPosition(~all(isfinite(mlapdv(:,1:2)),2)) = false;
+
+    elseif isequal(size(opt.positionROI), [1 3])
+
+        % Single ML/AP/DV point:
+        % retain all ROIs within a sphere of radius positionRadius.
+        centre = opt.positionROI;
+
+        dp = sqrt( ...
+            (mlapdv(:,1) - centre(1)).^2 + ...
+            (mlapdv(:,2) - centre(2)).^2 + ...
+            (mlapdv(:,3) - centre(3)).^2);
+
+        isPosition = dp <= opt.positionRadius;
+        isPosition(~all(isfinite(mlapdv(:,1:3)),2)) = false;
+
+    elseif isequal(size(opt.positionROI), [4 2])
+
+        % Four corners defining a polygon in ML/AP.
+        isPosition = inpolygon( ...
+            mlapdv(:,1), mlapdv(:,2), ...
+            opt.positionROI(:,1), opt.positionROI(:,2));
+
+        isPosition(~all(isfinite(mlapdv(:,1:2)),2)) = false;
+
+    elseif isequal(size(opt.positionROI), [8 3])
+
+        % Eight corners defining a convex volume in ML/AP/DV.
+        roiXYZ = mlapdv(:,1:3);
+        corners = opt.positionROI;
+
+        tri = delaunayn(corners);
+        simplexIdx = tsearchn(corners, tri, roiXYZ);
+
+        isPosition = ~isnan(simplexIdx);
+        isPosition(~all(isfinite(roiXYZ),2)) = false;
+
+    end
+
     % final FOV ROI mask
     keepROI = keepType(:) & ...
-              (cellScore(:) > opt.classifierThresh) & ...
-              logical(taskResp(:)) & ...
-              logical(taskTuned(:)) & ...
-              logical(isRegion(:));
+        (cellScore(:) > opt.classifierThresh) & ...
+        logical(taskResp(:)) & ...
+        logical(taskTuned(:)) & ...
+        logical(isRegion(:)) & ...
+        logical(isPosition(:));
 
     if opt.onlyChronic
         keepROI = keepROI & logical(chronicMask(:));
@@ -515,12 +596,12 @@ for i = 1:numel(d)
         iConds2 = nConds - fliplr(iConds1) + 1;
 
         diffEven_here = squeeze(mean(Peven(:,iConds2,:), 2, 'omitmissing') - ...
-                                mean(Peven(:,iConds1,:), 2, 'omitmissing'));
+            mean(Peven(:,iConds1,:), 2, 'omitmissing'));
         diffOdd_here  = squeeze(mean(Podd(:,iConds2,:), 2, 'omitmissing') - ...
-                                mean(Podd(:,iConds1,:), 2, 'omitmissing'));
+            mean(Podd(:,iConds1,:), 2, 'omitmissing'));
 
-        % flip sign for contrastDiff only
-        if strcmp(subtype, 'contrastDiff')
+        % flip sign for contrastDiff and stimSide only
+        if strcmp(subtype, 'contrastDiff') || strcmp(subtype, 'stimSide')
             diffEven_here = -diffEven_here;
             diffOdd_here  = -diffOdd_here;
         end
@@ -614,12 +695,16 @@ globalROI_all = globalROI_all(metaRows);
 %% optional row normalization across all plotted types using shared global ROI ids
 roiScale = [];
 if opt.normalizeRows
+
     roiScaleMap = containers.Map('KeyType', 'double', 'ValueType', 'double');
 
     for s = 1:nTypes
         ids = globalROI_byType{s};
-        vals = max(abs(Diff_even{s}), [], 2);
 
+        % Maximum absolute response across time, considering both odd and even trial splits
+        vals_even = max(abs(Diff_even{s}), [], 2, 'omitnan');
+        vals_odd  = max(abs(Diff_odd{s}),  [], 2, 'omitnan');
+        vals = max(vals_even, vals_odd);
         for k = 1:numel(ids)
             id = double(ids(k));
             v = double(vals(k));
@@ -747,8 +832,8 @@ figW = max(200, 20 + 80*nTypes);
 figH = 500;
 
 figure('Position', [1500 -100 figW figH], ...
-       'Color', 'w', ...
-       'Name', sprintf('%s | all session PETHs', sessNameFromPath(datpath)));
+    'Color', 'w', ...
+    'Name', sprintf('%s | all session PETHs', sessNameFromPath(datpath)));
 
 tl = tiledlayout(1, nTypes, ...
     'TileSpacing', 'compact', ...
@@ -794,8 +879,8 @@ if opt.showColorbar
     cbY = refPos(2) + (refPos(4) - cbH)/2;
 
     axCB = axes('Position', [cbX cbY cbW cbH], ...
-                'Visible', 'off', ...
-                'Color', 'none');
+        'Visible', 'off', ...
+        'Color', 'none');
 
     colormap(axCB, brewermap([], '*RdBu'));
     caxis(axCB, opt.caxis);
@@ -849,20 +934,80 @@ annotation(gcf, 'line', [x0, x0], [y0, y0 + dy_norm], ...
     'Color', 'k', 'LineWidth', 2);
 
 % ----- title text -----
+
 nShown = size(Diff_plot{1}, 1);
 
-topLine = sprintf('%s (n=%d)', regs, nShown);
+% Build location label
+locationParts = {};
+
+if ~isempty(opt.region)
+    locationParts{end+1} = regs;
+end
+
+if ~isempty(opt.positionROI)
+
+    if isequal(size(opt.positionROI), [1 2])
+
+        c = round(opt.positionROI);
+
+        locationParts{end+1} = sprintf( ...
+            'ML=%d, AP=%d \\mum', ...
+            c(1), c(2));
+
+    elseif isequal(size(opt.positionROI), [1 3])
+
+        c = round(opt.positionROI);
+
+        locationParts{end+1} = sprintf( ...
+            'ML=%d, AP=%d, DV=%d \\mum', ...
+            c(1), c(2), c(3));
+
+    elseif isequal(size(opt.positionROI), [4 2])
+
+        c = round(mean(opt.positionROI, 1));
+
+        locationParts{end+1} = sprintf( ...
+            'ML=%d, AP=%d \\mum', ...
+            c(1), c(2));
+
+    elseif isequal(size(opt.positionROI), [8 3])
+
+        c = round(mean(opt.positionROI, 1));
+
+        locationParts{end+1} = sprintf( ...
+            'ML=%d, AP=%d, DV=%d \\mum', ...
+            c(1), c(2), c(3));
+
+    end
+end
+
+if isempty(locationParts)
+    locationLabel = 'All';
+else
+    locationLabel = strjoin(locationParts, ' | ');
+end
+
+topLine = sprintf('%s (n=%d)', locationLabel, nShown);
+
 midLine = '\Delta resp. for even trials';
 
 if ~isempty(opt.sortReferenceSubtype)
+
     ttl = prettyPethTitle(opt.sortReferenceSubtype);
-    sortLbl = ttl{1}; % reuse top line (e.g. 'STIM SIDE')
-    botLine = sprintf('sorted by odd trial \\Delta resp. for %s', sortLbl);
+    sortLbl = ttl{1};
+
+    botLine = sprintf( ...
+        'sorted by odd trial \\Delta resp. for %s', ...
+        sortLbl);
+
 else
+
     botLine = 'sorted by odd \Delta resp.';
+
 end
 
-sgtitle(sprintf('%s\n%s\n%s', topLine, midLine, botLine), ...
+sgtitle(sprintf('%s\n%s\n%s', ...
+    topLine, midLine, botLine), ...
     'Interpreter', 'tex', ...
     'FontSize', 10, ...
     'FontWeight', 'bold');
@@ -1014,5 +1159,77 @@ switch char(string(pethType))
         botLine = evnt;
 
         ttl = {topLine; botLine};
+end
+end
+
+function match = matchNamesByPattern(names, patterns)
+%MATCHNAMESBYPATTERN Match PETH names and task-tuning column names.
+%
+% A pattern such as:
+%   'stimOn_stimSide'
+%
+% matches both:
+%   'stimOn_stimSide'
+%   'ccu_stimOn_0to400_stimSide'
+%
+% Likewise:
+%   'choiceMovement_choice'
+%
+% matches:
+%   'choiceMovement_choice'
+%   'ccu_choiceMovement_-200to200_choice'
+%
+% Wildcards * and ? are also supported.
+
+names = cellstr(string(names));
+patterns = cellstr(string(patterns));
+
+match = false(size(names));
+
+for i = 1:numel(names)
+
+    name = names{i};
+
+    for j = 1:numel(patterns)
+
+        pat = patterns{j};
+
+        %% 1. Direct wildcard/exact match
+        rx = ['^' regexptranslate('wildcard', pat) '$'];
+
+        if ~isempty(regexp(name, rx, 'once'))
+            match(i) = true;
+            break
+        end
+
+        %% 2. Interpret <event>_<trialType> as a PETH-style identifier
+        %
+        % e.g.
+        %   stimOn_stimSide
+        %
+        % should also match:
+        %   ccu_stimOn_0to400_stimSide
+
+        us = strfind(pat, '_');
+
+        if ~isempty(us)
+
+            eventPart = pat(1:us(1)-1);
+            typePart  = pat(us(1)+1:end);
+
+            % Allow arbitrary statistic and time-window fields between them.
+            tuningPattern = sprintf('*_%s_*_%s', ...
+                eventPart, typePart);
+
+            rxTuning = ['^' regexptranslate( ...
+                'wildcard', tuningPattern) '$'];
+
+            if ~isempty(regexp(name, rxTuning, 'once'))
+                match(i) = true;
+                break
+            end
+        end
     end
+end
+
 end

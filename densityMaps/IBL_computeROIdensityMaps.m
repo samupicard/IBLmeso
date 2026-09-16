@@ -62,7 +62,7 @@ sigma_bins = 1;
 
 min_rois_perBin = 10;
 min_rois_perBin_perSess = 5; %#ok<NASGU>
-min_sess_perBin = 2;
+min_sess_perBin = 1;
 
 qvec = 0.05:0.05:0.95;
 nq = numel(qvec);
