@@ -21,37 +21,41 @@ function [neuralQMs, fovQMs] = get_neuralQMs(F,Fneu,varargin)
 % 'Fr'              : frame rate in Hz if 'times' is not supplied
 %                     (default = 7)
 % 'F0prctile'       : percentile used to compute baseline fluorescence F0
-%                     for dF/F; [] disables normalization (default = 20)
+%                     for dF/F (default = 20)
 % 'transientPrctile': percentile used to estimate transient amplitude
-%                     (default = 99.9)
+%                     (default = 99.5)
 % 'neuropilFactor'  : neuropil subtraction factor (default = 0.7)
 % 'saturationTol'   : fraction of each ROI's raw fluorescence range
-%                     considered "near maximum" (default = 0.01)
+%                     considered "near maximum" (default = 0.02)
 % 'detrendWindow'   : moving-median detrending window in seconds
 %                     (default = 60)
 %
 % OUTPUTS
 % neuralQMs         : 1 x nROIs struct with fields:
 %
-%   noiseLevel          standardized shot-noise level computed from dF/F
-%   mean                mean neuropil-corrected fluorescence
-%   std                 SD of neuropil-corrected fluorescence
-%   skew                skewness of neuropil-corrected fluorescence
-%   var                 variance of detrended raw ROI fluorescence
-%   snrVar              ratio of detrended ROI fluorescence variance to
-%                       detrended neuropil variance
-%   snrTransient        transient amplitude divided by robust neuropil noise
-%   residualNeuropilR2  squared correlation between detrended,
-%                       neuropil-corrected ROI fluorescence and neuropil
-%   saturationRatio     fraction of retained frames at or near that ROI's
-%                       maximum raw fluorescence
-%   upperRebound        largest rise in the coarse raw-fluorescence
-%                       histogram after its main peak, normalized by the
-%                       main peak height. Values near 0 indicate a roughly
-%                       monotonically decreasing upper tail; larger values
-%                       indicate a pronounced secondary mode.
-% NB: For ROIs with zero detrended fluorescence variance, all QMs except 'var'
-% are returned as NaN.
+%   noiseLevel       standardized frame-to-frame noise level computed
+%                    from raw-ROI dF/F (same as Rupprecht et al)
+%   mean             mean neuropil-corrected fluorescence
+%   std              SD of neuropil-corrected fluorescence (same as s2p)
+%   skew             skewness of neuropil-corrected fluorescence (same as s2p)
+%   var              variance of detrended raw ROI fluorescence
+%   signalFraction   fraction of detrended neuropil-corrected fluorescence
+%                    variance exceeding the estimated frame-level noise
+%                    variance (0 = noise-dominated, 1 = signal-dominated)
+%   snrTransient     amplitude of large calcium transients divided by the
+%                    ROI's own estimated frame-level noise SD
+%   resNeuropilR2    squared correlation between detrended, neuropil-corr 
+%                    ROI fluorescence and detrended neuropil fluorescence
+%   saturationRatio  fraction of retained frames at or near that ROI's
+%                    maximum raw fluorescence
+%   upperRebound     largest rise in the coarse raw-fluorescence
+%                    histogram after its main peak, normalized by the
+%                    main peak height. Values near 0 indicate a roughly
+%                    monotonically decreasing upper tail; larger values
+%                    indicate a pronounced secondary mode
+%
+% For ROIs with zero detrended raw fluorescence variance, all metrics
+% except 'var' are returned as NaN.
 %
 % fovQMs            : scalar struct containing the mean of each neural QM
 %                     across ROIs for which iscell == true.
@@ -72,7 +76,7 @@ assert(nROIs < nTimepoints, ...
      'Received size %d x %d.'], nTimepoints, nROIs);
 
 defaultF0prctile = 20;
-defaultTransientPrctile = 99.9;
+defaultTransientPrctile = 99.5;
 defaultNeuropilFactor = 0.7;
 defaultFr = 7;
 defaultIscell = true(1,nROIs);
@@ -95,7 +99,7 @@ p.addParameter('Fr', defaultFr, ...
     @(x) isnumeric(x) && isscalar(x) && x>0)
 
 p.addParameter('F0prctile', defaultF0prctile, ...
-    @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=0 && x<=100))
+    @(x) isnumeric(x) && isscalar(x) && x>=0 && x<=100)
 
 p.addParameter('transientPrctile', defaultTransientPrctile, ...
     @(x) isnumeric(x) && isscalar(x) && x>=0 && x<=100)
@@ -145,21 +149,18 @@ Fneu = Fneu(~badframes,:);
 
 F_npc = F - neuropilFactor*Fneu;
 
-if ~isempty(F0prctile)
+F0 = prctile(F,F0prctile,1);
+dFF = (F - F0) ./ F0 * 100;
 
-    F0 = prctile(F,F0prctile,1);
-    dFF = (F-F0) ./ F0 * 100;
+%protect against pathological F0
+badF0 = ~isfinite(F0) | F0 <= 0;
+dFF(:,badF0) = NaN;
 
-else
-
-    dFF = F;
-
-end
-
-%% Detrend raw fluorescence traces
+%% Detrend fluorescence traces and estimate frame-to-frame noise
 
 % Remove slow fluorescence drift/bleaching using a moving median.
 % The window should be much longer than GCaMP6s calcium transients.
+
 detrendWindowFrames = max(3,round(detrendWindow*Fr));
 
 F_baseline = movmedian(F,detrendWindowFrames,1, ...
@@ -168,8 +169,18 @@ F_baseline = movmedian(F,detrendWindowFrames,1, ...
 Fneu_baseline = movmedian(Fneu,detrendWindowFrames,1, ...
     'omitmissing','Endpoints','shrink');
 
+F_npc_baseline = movmedian(F_npc,detrendWindowFrames,1, ...
+    'omitmissing','Endpoints','shrink');
+
 F_detrended = F - F_baseline;
 Fneu_detrended = Fneu - Fneu_baseline;
+F_npc_detrended = F_npc - F_npc_baseline;
+
+% Robust estimate of frame-level noise SD from successive differences.
+% Division by sqrt(2) converts difference noise to single-frame noise;
+% 1.4826 scales MAD to SD for Gaussian noise.
+dx = diff(F_npc_detrended,1,1);
+sigmaNoise = 1.4826 * mad(dx,1,1) / sqrt(2);
 
 %% Saturation QC
 
@@ -189,7 +200,7 @@ saturationRatios(badRange) = NaN;
 
 %% Compute other QMs
 
-% Standardized shot noise level
+% Standardized frame-to-frame noise level in dF/F
 noiseLevels = median(abs(diff(dFF,1,1)),1,'omitnan') / sqrt(Fr);
 
 % Mean neuropil-corrected fluorescence
@@ -201,32 +212,35 @@ stds = std(F_npc,0,1);
 % Skewness of neuropil-corrected fluorescence
 skews = skewness(F_npc,0,1);
 
-% Variance of detrended ROI fluorescence
+% Variance of detrended raw ROI fluorescence
+% Kept on raw F so genuinely flat ROIs remain identifiable.
 vars = var(F_detrended,1,1);
 
-% Ratio of detrended ROI fluorescence variance to neuropil variance
-snrs = vars ./ var(Fneu_detrended,1,1);
+% Fraction of detrended neuropil-corrected variance exceeding the
+% estimated frame-level noise variance
+totalVar = var(F_npc_detrended,1,1);
+noiseVar = sigmaNoise.^2;
 
-% Transient amplitude and transient SNR relative to neuropil fluctuations
-F_npc_detrended = F_detrended - neuropilFactor*Fneu_detrended;
+signalFractions = 1 - noiseVar ./ totalVar;
+signalFractions = max(0,min(1,signalFractions)); %make sure this is between 0 and 1
 
-transientAmp = ...
+% Transient SNR: amplitude of large calcium transients relative to the
+% ROI's own estimated frame-level noise SD
+transientAmps = ...
     prctile(F_npc_detrended,transientPrctile,1) - ...
     median(F_npc_detrended,1);
 
-neuropilNoise = 1.4826 * mad(Fneu_detrended,1,1);
-% 1.4826 scales MAD to approximately SD for a Gaussian distribution
+transientSNRs = transientAmps ./ sigmaNoise;
 
-transientSNRs = transientAmp ./ neuropilNoise;
-
-% Squared correlation between detrended neuropil-corrected F and neuropil
+% Squared correlation between detrended neuropil-corrected fluorescence
+% and detrended neuropil fluorescence
 F_centered = F_npc_detrended - mean(F_npc_detrended,1);
 Fneu_centered = Fneu_detrended - mean(Fneu_detrended,1);
 
 r = sum(F_centered.*Fneu_centered,1) ./ ...
     sqrt(sum(F_centered.^2,1).*sum(Fneu_centered.^2,1));
 
-residualNeuropilR2 = r.^2;
+resNeuropilR2s = r.^2;
 
 %% Compute upper rebound metric (measure of possible saturation)
 
@@ -275,11 +289,15 @@ noiseLevels(zeroVar) = NaN;
 means(zeroVar) = NaN;
 stds(zeroVar) = NaN;
 skews(zeroVar) = NaN;
-snrs(zeroVar) = NaN;
+signalFractions(zeroVar) = NaN;
 transientSNRs(zeroVar) = NaN;
-residualNeuropilR2(zeroVar) = NaN;
+resNeuropilR2s(zeroVar) = NaN;
 saturationRatios(zeroVar) = NaN;
 upperRebound(zeroVar) = NaN;
+
+%similarly protect against pathological noise estimates
+badNoise = ~isfinite(sigmaNoise) | sigmaNoise <= 0;
+transientSNRs(badNoise) = NaN;
 
 %% Return neural quality metrics
 
@@ -292,9 +310,9 @@ for iROI = 1:nROIs
     neuralQMs(iROI).std = stds(iROI);
     neuralQMs(iROI).skew = skews(iROI);
     neuralQMs(iROI).var = vars(iROI);
-    neuralQMs(iROI).snrVar = snrs(iROI);
+    neuralQMs(iROI).signalFraction = signalFractions(iROI);
     neuralQMs(iROI).snrTransient = transientSNRs(iROI);
-    neuralQMs(iROI).residualNeuropilR2 = residualNeuropilR2(iROI);
+    neuralQMs(iROI).resNeuropilR2 = resNeuropilR2s(iROI);
     neuralQMs(iROI).saturationRatio = saturationRatios(iROI);
     neuralQMs(iROI).upperRebound = upperRebound(iROI);
 
@@ -308,9 +326,9 @@ fovQMs = struct( ...
     'std',                mean(stds(iscell),'omitnan'), ...
     'skew',               mean(skews(iscell),'omitnan'), ...
     'var',                mean(vars(iscell),'omitnan'), ...
-    'snrVar',             mean(snrs(iscell),'omitnan'), ...
+    'signalFraction',     mean(signalFractions(iscell),'omitnan'), ...
     'snrTransient',       mean(transientSNRs(iscell),'omitnan'), ...
-    'residualNeuropilR2', mean(residualNeuropilR2(iscell),'omitnan'), ...
+    'resNeuropilR2',      mean(resNeuropilR2s(iscell),'omitnan'), ...
     'saturationRatio',    mean(saturationRatios(iscell),'omitnan'), ...
     'upperRebound',       mean(upperRebound(iscell),'omitnan'));
 

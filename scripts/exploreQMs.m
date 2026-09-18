@@ -2,7 +2,7 @@
 
 %datpath = 'Y:\Subjects\SP081\2026-09-10\001'; %multi-depth, some saturated ROIs
 datpath = 'Y:\Subjects\SP076\2025-11-10\001'; %some low SNR FOVs
-
+%datpath = 'Y:\Subjects\SP058'
 
 % Load
 splitPaths = split(datpath,filesep);
@@ -290,7 +290,7 @@ for iMetric = 1:numel(metricNames)
 
     exampleROIs = rankedROIs(exampleRanks);
 
-    figure('Name',sprintf('QC examples: %s',metricName));
+    figure('Name',sprintf('QC ex: %s',metricName));
 
     tl = tiledlayout(numel(exampleROIs),1, ...
         'TileSpacing','compact', ...
@@ -365,7 +365,7 @@ for iMetric = 1:numel(metricNames)
         'Interpreter','none');
 
     linkaxes(ax,'x');
-    xlim(ax(1),[3000,3600]);
+    xlim(ax(1),[3200,3400]);
 
 end
 
