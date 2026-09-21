@@ -76,7 +76,7 @@ assert(nROIs < nTimepoints, ...
      'Received size %d x %d.'], nTimepoints, nROIs);
 
 defaultF0prctile = 20;
-defaultTransientPrctile = 99.5;
+defaultTransientPrctile = 99.9;
 defaultNeuropilFactor = 0.7;
 defaultFr = 7;
 defaultIscell = true(1,nROIs);
@@ -224,7 +224,7 @@ noiseVar = sigmaNoise.^2;
 signalFractions = 1 - noiseVar ./ totalVar;
 signalFractions = max(0,min(1,signalFractions)); %make sure this is between 0 and 1
 
-% Transient SNR: amplitude of large calcium transients relative to the
+% Transient SNR: amplitude of largest transients relative to the
 % ROI's own estimated frame-level noise SD
 transientAmps = ...
     prctile(F_npc_detrended,transientPrctile,1) - ...
