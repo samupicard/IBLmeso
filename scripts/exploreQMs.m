@@ -1,17 +1,25 @@
-%% prep
 
-%datpath = 'Y:\Subjects\SP081\2026-09-10\001'; %multi-depth, some saturated ROIs
-datpath = 'Y:\Subjects\SP076\2025-11-10\001'; %some low SNR FOVs
+datpath = 'Y:\Subjects\SP081\2026-09-10\001'; %multi-depth, some saturated ROIs
+%datpath = 'Y:\Subjects\SP076\2025-11-10\001'; %some low SNR FOVs
 %datpath = 'Y:\Subjects\SP058'
 
-% Load
+fovNm = 'FOV_00';
+
+saveflag = true;
+
+%% Load data
 splitPaths = split(datpath,filesep);
 subj = splitPaths{end-2};
 date = splitPaths{end-1};
 sess = splitPaths{end};
 
 fprintf('%s: loading ',datpath)
-Fall = IBL_loadMesoData(subj,date,sess,'fast',true);
+
+if isempty(fovNm)
+    Fall = IBL_loadMesoData(subj,date,sess,'fast',true);
+else
+    Fall = IBL_loadMesoData(subj,date,sess,'fast',true,'fov',fovNm);
+end
 
 F = Fall.F';
 Fneu = Fall.Fneu';
@@ -22,6 +30,28 @@ times = Fall.time;
 fprintf('\nComputing QC metrics..');
 neuralQMs = get_neuralQMs(F,Fneu,times);
 fprintf('. Done!\n');
+
+%% save the QCs
+if saveflag & ~isempty(fovNm)
+    fprintf('Saving QC metrics..');
+    outPath = fullfile(datpath,'alf',fovNm,'_suite2p_ROIData.raw');
+    metricNames = fieldnames(neuralQMs);
+    for iMetric = 1:numel(metricNames)
+        metricName = metricNames{iMetric};
+        vals = single([neuralQMs.(metricName)]');
+        vals_log = log(vals-min(threshold,min(vals))+0.0001*range(vals)); %robustly log transform
+        vals(isnan(vals)) = min(vals(~isnan(vals))); %set NaN on the minimum of the scale
+        vals_log(isnan(vals_log)) = min(vals_log(~isnan(vals_log)));
+        fileName = fullfile(outPath, sprintf('QC%s', metricName));
+        writeNPY(vals, [fileName '.npy']);
+        writeNPY(vals_log, [fileName 'Log.npy']);
+
+    end
+    fprintf('. Done!');
+end
+
+vals0 = rand(size(vals));
+writeNPY(vals0, fullfile(outPath, sprintf('test.npy', metricName)));
 
 %% threshold the metrics
 
@@ -365,7 +395,7 @@ for iMetric = 1:numel(metricNames)
         'Interpreter','none');
 
     linkaxes(ax,'x');
-    xlim(ax(1),[3200,3400]);
+    xlim(ax(1),[0,3400]);
 
 end
 
@@ -386,7 +416,16 @@ tl = tiledlayout(nRows,nCols, ...
 for iMetric = 1:nMetrics
 
     metricName = metricNames{iMetric};
+    threshold = thresholds.(metricName).value;
+    passIf = thresholds.(metricName).passIf;
     vals = qmTable.(metricName);
+
+    %apply transformation to QC value and threshold
+    if true
+        vals_raw = vals;
+        vals = vals-min(threshold,min(vals_raw))+0.0001*range(vals_raw); vals = log(vals);
+        threshold = threshold-min(threshold,min(vals_raw))+0.0001*range(vals_raw); threshold = log(threshold);
+    end
 
     ax = nexttile;
     hold(ax,'on');
@@ -407,7 +446,6 @@ for iMetric = 1:nMetrics
     xLim = prctile(allVals,[0.05 99.9]);
 
     % Make sure the QC threshold is included in the plotting range
-    threshold = thresholds.(metricName).value;
     xLim(1) = min(xLim(1),threshold);
     xLim(2) = max(xLim(2),threshold);
 
@@ -433,10 +471,7 @@ for iMetric = 1:nMetrics
         'LineWidth',1.5, ...
         'DisplayName',sprintf('Non-cell (n=%d)',length(nonCellVals)));
 
-    % QC threshold
-    threshold = thresholds.(metricName).value;
-    passIf = thresholds.(metricName).passIf;
-
+    % Draw QC threshold
     if ismember(passIf, {'<','<='})
         labelSide = 'left';
     else
@@ -445,7 +480,7 @@ for iMetric = 1:nMetrics
 
     xline(ax,threshold,'--', ...
         sprintf('%s %.3g', ...
-        thresholds.(metricName).passIf,threshold), ...
+        passIf,threshold), ...
         'LineWidth',1.2, ...
         'LabelVerticalAlignment','top',...
         'LabelHorizontalAlignment',labelSide, ...
