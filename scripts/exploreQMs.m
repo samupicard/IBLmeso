@@ -1,9 +1,11 @@
 
-datpath = 'Y:\Subjects\SP081\2026-09-10\001'; %multi-depth, some saturated ROIs
+%datpath = 'Y:\Subjects\SP081\2026-09-10\001'; %multi-depth, some saturated ROIs
 %datpath = 'Y:\Subjects\SP076\2025-11-10\001'; %some low SNR FOVs
+datpath = 'Y:\Subjects\SP075\2025-11-10\001'; %good session
 %datpath = 'Y:\Subjects\SP058'
 
-fovNm = 'FOV_00';
+%fovNm = 'FOV_00';
+fovNm = 'FOV_04';
 
 saveflag = true;
 
@@ -29,6 +31,30 @@ times = Fall.time;
 
 fprintf('\nComputing QC metrics..');
 neuralQMs = get_neuralQMs(F,Fneu,times);
+
+% append pre-computed suite2p QC metrics if they exists
+qmFile = fullfile(datpath,'alf',fovNm,...
+    'mpciROIs.qualityMetric_suite2p.tsv');
+
+if isfile(qmFile)
+    suite2pQMs = readtable(qmFile,'FileType','text','Delimiter','\t');
+
+    assert(height(suite2pQMs) == numel(neuralQMs), ...
+        'Number of ROIs in suite2p QC file (%d) does not match neuralQMs (%d).', ...
+        height(suite2pQMs),numel(neuralQMs));
+
+    fieldNames = suite2pQMs.Properties.VariableNames;
+
+    for iField = 1:numel(fieldNames)
+        vals = num2cell(suite2pQMs.(fieldNames{iField}));
+        newFieldName = ['s2p_' fieldNames{iField}];
+        [neuralQMs.(newFieldName)] = vals{:};    
+    end
+
+else
+    warning('Suite2p QC file not found: %s',qmFile);
+end
+
 fprintf('. Done!\n');
 
 %% save the QCs
@@ -39,7 +65,7 @@ if saveflag & ~isempty(fovNm)
     for iMetric = 1:numel(metricNames)
         metricName = metricNames{iMetric};
         vals = single([neuralQMs.(metricName)]');
-        vals_log = log(vals-min(threshold,min(vals))+0.0001*range(vals)); %robustly log transform
+        vals_log = log(vals-min(vals)+0.0001*range(vals)); %robustly log transform
         vals(isnan(vals)) = min(vals(~isnan(vals))); %set NaN on the minimum of the scale
         vals_log(isnan(vals_log)) = min(vals_log(~isnan(vals_log)));
         fileName = fullfile(outPath, sprintf('QC%s', metricName));
@@ -50,8 +76,6 @@ if saveflag & ~isempty(fovNm)
     fprintf('. Done!');
 end
 
-vals0 = rand(size(vals));
-writeNPY(vals0, fullfile(outPath, sprintf('test.npy', metricName)));
 
 %% threshold the metrics
 
@@ -395,7 +419,7 @@ for iMetric = 1:numel(metricNames)
         'Interpreter','none');
 
     linkaxes(ax,'x');
-    xlim(ax(1),[0,3400]);
+    xlim(ax(1),[0,1000]);
 
 end
 
@@ -407,13 +431,15 @@ nMetrics = numel(metricNames);
 nCols = 4;
 nRows = ceil(nMetrics/nCols);
 
+nCols = 2; nRows = 2;
+
 figure('Name','Neural QC metric distributions');
 
 tl = tiledlayout(nRows,nCols, ...
     'TileSpacing','compact', ...
     'Padding','compact');
 
-for iMetric = 1:nMetrics
+for iMetric = [1,6,7]%1:nMetrics
 
     metricName = metricNames{iMetric};
     threshold = thresholds.(metricName).value;
@@ -421,7 +447,7 @@ for iMetric = 1:nMetrics
     vals = qmTable.(metricName);
 
     %apply transformation to QC value and threshold
-    if true
+    if ismember(iMetric,[1,6,7])
         vals_raw = vals;
         vals = vals-min(threshold,min(vals_raw))+0.0001*range(vals_raw); vals = log(vals);
         threshold = threshold-min(threshold,min(vals_raw))+0.0001*range(vals_raw); threshold = log(threshold);
