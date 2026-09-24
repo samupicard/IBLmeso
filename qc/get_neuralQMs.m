@@ -71,9 +71,6 @@ assert(isequal(size(F), size(Fneu)), ...
 
 [nTimepoints, nROIs] = size(F);
 
-assert(nROIs < nTimepoints, ...
-    ['F and Fneu must be nTimepoints x nROIs, with nROIs < nTimepoints. ' ...
-     'Received size %d x %d.'], nTimepoints, nROIs);
 
 defaultF0prctile = 20;
 defaultTransientPrctile = 99.9;
