@@ -1,7 +1,11 @@
 %% Batch motion-registration QC
 
-%rootPath = 'Y:\Subjects\SP081\2026-09-15\001';   % drift
-rootPath = 'Y:\Subjects\SP075\2025-11-10\001';   % no drift?
+rootPath = 'Y:\Subjects\SP081\2026-09-15\001';   % drift
+%rootPath = 'Y:\Subjects\SP075\2025-11-10\001';   % no drift?
+%rootPath = 'Y:\Subjects\SP081\2026-09-25\001';   % drift, mid-session adjustment
+%rootPath = 'Y:\Subjects\SS010\2026-09-24\004';   % spontaneous
+
+rootPath = 'Y:\Subjects\SS010\2026-10-12\002';   % drift
 
 
 nPCsPlot = 4;
@@ -28,6 +32,7 @@ fallPaths = cell(numel(fallFiles),1);
 for iFile = 1:numel(fallFiles)
 
     fallPath = fullfile(fallFiles(iFile).folder,fallFiles(iFile).name);
+    timesPath = fullfile(fileparts(fallFiles(iFile).folder),'mpci.times.npy');
 
     fallPaths{iFile} = fallPath;
 
@@ -37,7 +42,7 @@ for iFile = 1:numel(fallFiles)
 
     try
 
-        %% Load ops only
+        %% Load ops and times
 
         S = load(fallPath,'ops');
 
@@ -48,6 +53,12 @@ for iFile = 1:numel(fallFiles)
 
         ops = S.ops;
 
+        if isfile(timesPath)
+            times = readNPY(timesPath);
+            frameRate = median(diff(times));
+        else
+            frameRate = 0.2; %guess (5Hz)
+        end
 
         %% Define GIF output path
 
@@ -58,6 +69,7 @@ for iFile = 1:numel(fallFiles)
         %% Run QC
 
         [thisDrift,thisExcursion,thisrTime,thisLowFpower] = plotMotionRegistrationMetrics(ops, ...
+            'frameRate',frameRate,...
             'nPCsPlot',nPCsPlot, ...
             'cropCentral', true, ...
             'saveGif',true, ...
@@ -247,42 +259,47 @@ if true
 
 end
 
+
 %% Plot drift scores with PCs sorted independently for each FOV
 
-fig2 = figure( ...
-    'Color','w', ...
-    'Name','Sorted motion registration drift scores', ...
-    'WindowStyle','normal',...
-    'Position',[3233 77 602 397]);
+   fig0 = figure('Color','w', ...
+        'Name','Sorted motion registration drift scores', ...
+        'WindowStyle','normal','Position',[3800,0,500,600]);
 
-ax = axes(fig2);
-hold(ax,'on');
+    tl2 = tiledlayout(2,1, ...
+        'TileSpacing','compact', ...
+        'Padding','compact');
+
+%Drift scores
+
+ax01 = nexttile;
+hold(ax01,'on');
 
 pcRank = 1:nPCsScore;
 
 for iFile = 1:numel(fallPaths)
 
-    sortedScores = sort(lowFPowers(iFile,:), ...
+    sortedScores = sort(driftScores(iFile,:), ...
         'descend', ...
         'MissingPlacement','last');
 
-    plot(ax,pcRank,sortedScores, ...
+    plot(ax01,pcRank,sortedScores, ...
         '-', ...
         'LineWidth',1.5, ...
         'MarkerSize',3);
 
 end
 
-xlabel(ax,'PC rank');
-ylabel(ax,'Drift score');
+xlabel(ax01,'PC rank (sorted by magnitude)');
+ylabel(ax01,'Drift score');
 
-title(ax,'low-f power fraction per PC, sorted by magnitude');
+title(ax01,'Drift score per PC');
 
-xlim(ax,[1 nPCsScore]);
-%xticks(ax,1:nPCsScore);
+xlim(ax01,[1 nPCsScore]);
+%xticks(ax01,1:nPCsScore);
 
-ylim(ax,[0,1]);
-grid(ax,'on');
+ylim(ax01,[0,3]);
+grid(ax01,'on');
 
 
 %legend
@@ -302,7 +319,38 @@ for iFile = 1:numel(fallPaths)
 
 end
 
-legend(ax,legendLabels, ...
+legend(ax01,legendLabels, ...
     'Interpreter','none', ...
     'Location','eastoutside');
+
+%Low-f power fractions
+
+ax02 = nexttile;
+hold(ax02,'on');
+
+
+for iFile = 1:numel(fallPaths)
+
+    sortedScores = sort(lowFPowers(iFile,:), ...
+        'descend', ...
+        'MissingPlacement','last');
+
+    plot(ax02,pcRank,sortedScores, ...
+        '-', ...
+        'LineWidth',1.5, ...
+        'MarkerSize',3);
+
+end
+
+xlabel(ax02,'PC rank (sorted by magnitude)');
+ylabel(ax02,'Low-f Power Fraction');
+
+title(ax02,'Low-f Power Fraction per PC');
+
+xlim(ax02,[1 nPCsScore]);
+%xticks(ax02,1:nPCsScore);
+
+ylim(ax02,[0,1]);
+grid(ax02,'on');
+
 
