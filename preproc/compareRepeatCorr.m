@@ -118,8 +118,9 @@ for iPath = 1:numel(sPaths)
     data = struct('s2p', emptyMethod(), 'masknmf', emptyMethod());
     for iFOV =  1:length(fovs)
         fov = fovs(iFOV);
-        s2pPath = fullfile(sPath, 'alf', sprintf('FOV_%02d', fov));
-        maskPath = fullfile(sPath, 'suite2p', sprintf('plane%d', fov), 'masknmf_output');
+        s2pPath = fullfile(sPath, 'alf', sprintf('FOV_%02d', fov), 'suite2p');
+        %maskPath = fullfile(sPath, 'suite2p', sprintf('plane%d', fov), 'masknmf_output');
+        maskPath = fullfile(sPath, 'alf', sprintf('FOV_%02d', fov), 'maskNMF');
         hasS2p = ismember(fov, fovS2p);
         hasMask = ismember(fov, fovMask);
 
@@ -241,7 +242,7 @@ for k = 1:numel(folders)
     if ~folders(k).isdir, continue; end
     n = sscanf(folders(k).name, 'FOV_%d');
     if isempty(n), continue; end
-    s2pPath = fullfile(alfDir, folders(k).name, traceFn);
+    s2pPath = fullfile(alfDir, folders(k).name, 'suite2p', traceFn);
     maskPath = fullfile(sPath, 'suite2p', sprintf('plane%d',n), 'masknmf_output', traceFn);
     if isfile(s2pPath), s2pFOVs(end+1) = n; end %#ok<AGROW>
     if isfile(maskPath), maskFOVs(end+1) = n; end %#ok<AGROW>
