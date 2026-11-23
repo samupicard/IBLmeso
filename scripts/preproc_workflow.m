@@ -11,9 +11,9 @@
 %     };
 % FOV_sel = [3,4,5,6];
 
-sPaths = {'Y:\Subjects\SS010\2026-10-12\003'};
+sPaths = {'Y:\Subjects\SS010\2026-10-12\002'};
 %FOV_sel = [2,6];
-FOV_sel = [];
+FOV_sel = 1;
 
 results = compareRepeatCorr(sPaths, 'FOVs', FOV_sel, 'ClassifierThreshold', 0.5);
 

@@ -1,4 +1,4 @@
-function [coeff,dev,stat] = fitPM_noblocks(y,X,F,qs)
+function [coeff,dev,stat] = fitPM_nobias(y,X,F,qs)
 
 %using 'glmfit', fit a sigmoid function to psychometric data WITHOUT block
 %types

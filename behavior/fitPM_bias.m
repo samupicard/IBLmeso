@@ -27,9 +27,7 @@ if nargin<4
     F = 'logit';
 end
 if nargin<5 %add exponents
-    %qs = 1; 
     qs = [0.05:0.05:1];
-    %qs = logspace(-2,0,15); 
 end
 plotQs = false; %set to true if you want to plot the q exponent
 

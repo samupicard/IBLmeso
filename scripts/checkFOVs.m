@@ -1,3 +1,31 @@
+%% Explore imaging quality across FOVs
+%
+% This script assesses and compares imaging quality across all fields of
+% view (FOVs) in a mesoscope recording session.
+%
+% 1. Loads mean images and acquisition metadata for all FOVs, and plots
+%    them with common intensity scaling and imaging depth annotations.
+% 2. Compares example traces between selected FOVs.
+% 3. Computes ROI-level quality metrics from raw fluorescence, neuropil
+%    fluorescence and frame timestamps, excluding flagged bad frames.
+% 4. Separates putative cells from non-cells using classifier scores and
+%    compares their quality metric distributions across FOVs, including:
+%       - Noise level, mean fluorescence, standard deviation and skewness.
+%       - Saturation ratio.
+% 5. Visualizes quality metric distributions as mirrored density plots
+%    (non-cells vs cells), with common scales and median annotations.
+% 6. Plots example fluorescence traces sampled across the distribution
+%    of saturation ratios to investigate problematic ROIs/FOVs.
+%
+% Main parameters:
+%   datpath       - Session directory
+%   classThresh   - Minimum classifier score for putative cells
+%   qmNames       - Quality metrics to compare across FOVs
+%   FOVs_toplot   - FOVs selected for example activity trace comparisons
+%   fov_toplot    - FOV selected for quality metric trace exploration
+%
+% Dependencies: readNPY, get_neuralQMs, plotQMquantileTraces,
+%               Statistics and Machine Learning Toolbox.
 
 %datpath = 'Y:\Subjects\SP044\2023-06-27\001'; %bad one
 %datpath = 'Y:\Subjects\SP044\2023-06-30\001';
@@ -288,7 +316,7 @@ F = readNPY(fullfile(fovDir,fn_F));
 metricVals = [neuralQMs_all{4}.saturationRatio];
 
 plotQMquantileTraces(F,metricVals, ...
-    'mask',iscell_all{7}, ...
+    'mask',iscell_all{4}, ...
     'metricName','saturationRatio', ...
     'traceName','raw fluorescence');
 
